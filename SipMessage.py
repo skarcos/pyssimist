@@ -11,11 +11,16 @@ class SipMessage(object):
         self.header=header_dict
         self.headers=self.header
         self.body=body
+        if body:
+          self.header["Content-Length"]=str(len(body.strip())+2)
         # merge both dictionaries into 1
         #self.key=self.header.update(self.body)
 
-    def __hash__(self,key):
+    def __getitem__(self,key):
         return self.header[key]
+
+    def __setitem__(self,key,value):
+        self.header[key]=value
             
     def __repr__(self):
         if self.type=="Request":
@@ -34,5 +39,7 @@ class SipMessage(object):
     def message(self):
         return repr(self)
 
+    def contents(self):
+        return self.message()
 if __name__=="__main__":
     pass

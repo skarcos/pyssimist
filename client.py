@@ -17,6 +17,6 @@ class TCPClient(object):
         #self.socket.sendall(binascii.hexlify(bytes(data,"utf8")))
         self.socket.sendall(bytes(data,"utf8"))
 
-    def waitForData(self,buffer=1024):
+    def waitForData(self,buffer=4096):
         data = self.socket.recv(buffer)
-        print('Received:\n',str(data))
+        return data

@@ -1,45 +1,158 @@
 from client import TCPClient
+from SipParser import parseBytes,buildMessage
+from messages import message
+from time import sleep
 import util
-message={"A":'''\
-OPTIONS sip:{dest_ip}:{dest_port};transport={transport} SIP/2.0
-Call-ID: {callId}
-CSeq: 1 OPTIONS
-To: <sip:{dest_ip}:{dest_port}>
-From: <sip:{user}@{sourceIP}:{sourcePort}>;tag=snl_{fromTag}
-User-Agent: OpenScape Voice V9R0
-Content-Length: 0
-Max-Forwards: 70
-Via: SIP/2.0/TCP {sourceIP}:{sourcePort};branch={viaBranch}
 
-'''.replace("\n","\r\n"),
-         "B":'''\
-SIP/2.0 200 OK
-Call-ID: {any}
-CSeq: 1 OPTIONS
-From: <sip:survivabilityprovider@10.5.111.100>;tag=2002523463
-To: <sip:sipserver@10.5.111.56:5161;transport=TLS>;tag=SEC11-a70050a-a70050a-1-4BW18Fm8vXem
-Via: SIP/2.0/TLS 10.5.111.100:5061;branch=z9hG4bK8081.221dd174bcecbac6d9b3928928ff8171.0;i=1
-Via: SIP/2.0/TCP 10.5.111.100;branch=z9hG4bK83973b84
-Via: SIP/2.0/TLS 10.5.111.100:5161;branch=z9hG4bK349799b9
-Content-Length: 0'''
-}
-
-parameters={"dest_ip":"192.168.1.70",
-            "dest_port":9999,
+usera="302108100001"
+userb="302108100501"
+link={}
+talkDuration=10
+parameters=util.dict_2({"dest_ip":"10.2.0.22",
+            "dest_port":5060,
             "transport":"tcp",
-            "callId":util.randomCallID(),
-            "user":"3021005533",
-            "fromTag":util.randomFromTag(),
-            "sourceIP":util.getLocalIP(),
-            "sourcePort":50003,
-            "viaBranch":util.randomBranch()
-            }
+            "callId":util.randomCallID,
+            "fromTag":util.randomTag,
+            "source_ip":util.getLocalIP,
+#            "source_port":5080,
+            "viaBranch":util.randomBranch,
+            "epid":lambda x=6: "SC"+util.randStr(x),
+            "bodyLength":"0",
+            "expires":"360"
+            })
 
-m=message["A"].format(**parameters)
-print(m)
+def Connect(user_range,baseLocalPort,localIP=util.getLocalIP()):
+    " Open the connections for the users "
+    connection_pool={}
+    localPort=baseLocalPort
+    for user in user_range:        
+        C=TCPClient(localIP,localPort)
+        C.connect(parameters["dest_ip"],parameters["dest_port"])
+        connection_pool[user]=C
+        localPort=localPort+1
+    return connection_pool
 
-C=TCPClient(parameters["sourceIP"],parameters["sourcePort"])
-C.connect(parameters["dest_ip"],parameters["dest_port"])
-C.send(m)
+def Register(user):
+    parameters["user"]=user
+    L=link[user]
+    parameters["source_port"]=L.port
+    m=buildMessage(message["Register_1"],parameters)
+    print(m)
+    L.send(m.contents())
+    inBytes=L.waitForData()
+    inmessage=parseBytes(inBytes)
+    print(inmessage)
+    assert inmessage.type=="Response" and inmessage.status=="200 OK"
 
-C.waitForData()
+
+def Unregister(user):
+    parameters["expires"]="0"
+    Register(user)
+
+def flow(usera, userb):
+    parameters["userA"]=usera
+    parameters["userB"]=userb
+
+    parameters["source_port"]=link[usera].port
+    Invite=buildMessage(message["Invite_SDP_1"],parameters)
+    print(Invite)
+    link[usera].send(Invite.contents())
+    
+    inBytes=link[usera].waitForData()
+    inmessage=parseBytes(inBytes)
+    print("IN:",inmessage)
+    assert inmessage.type=="Response" and inmessage.status=="100 Trying"
+
+    inBytes=link[userb].waitForData()
+    inmessageb=parseBytes(inBytes)
+    print("IN:",inmessageb)
+    assert inmessageb.type=="Request" and inmessageb.method=="INVITE"
+
+    parameters["source_port"]=link[userb].port
+    parameters["callId"]=inmessage["Call-ID"]
+    m=buildMessage(message["Trying_1"],parameters)
+    for h in ("To", "From", "CSeq","Via","Call-ID"):
+      m[h]=inmessageb[h]
+    print(m)
+    link[userb].send(m.contents())
+
+    parameters["source_port"]=link[userb].port
+    Ringing=buildMessage(message["Ringing_1"],parameters)
+    for h in ("To", "From", "CSeq","Via","Call-ID"):
+      Ringing[h]=inmessageb[h]
+    toTag=";tag="+util.randStr(8)
+    Ringing["To"]=Ringing["To"]+toTag
+    print(Ringing)
+    link[userb].send(Ringing.contents())
+    
+    inBytes=link[usera].waitForData()
+    inmessage=parseBytes(inBytes)
+    print("IN:",inmessage)
+    assert inmessage.type=="Response" and inmessage.status=="180 Ringing"
+
+    parameters["source_port"]=link[userb].port
+    m=buildMessage(message["200_OK_SDP_1"],parameters)
+    for h in ("To", "From", "CSeq","Via","Call-ID"):
+      m[h]=Ringing[h]
+    m["To"]=m["To"]+toTag
+    print(m)
+    link[userb].send(m.contents())
+
+    inBytes=link[userb].waitForData()
+    inmessage=parseBytes(inBytes)
+    print("IN:",inmessage)
+    assert inmessage.type=="Request" and inmessage.method=="ACK"
+
+    inBytes=link[usera].waitForData()
+    inmessage=parseBytes(inBytes)
+    print("IN:",inmessage)
+    assert inmessage.type=="Response" and inmessage.status=="200 OK"
+
+    parameters["source_port"]=link[usera].port
+    m=buildMessage(message["Ack_1"],parameters)
+    for h in ("To","From","Call-ID"):
+      m[h]=inmessage[h]
+    print(m)
+    link[usera].send(m.contents())
+
+
+    sleep(talkDuration)
+
+    parameters["source_port"]=link[usera].port
+    m=buildMessage(message["Bye_1"],parameters)
+    for h in ("To", "From","Call-ID"):
+      m[h]=inmessage[h]
+    print(m)
+    link[usera].send(m.contents())
+
+    inBytes=link[usera].waitForData()
+    inmessage=parseBytes(inBytes)
+    print("IN:",inmessage)
+    assert inmessage.type=="Response" and inmessage.status=="200 OK"
+
+    inBytes=link[userb].waitForData()
+    Bye=parseBytes(inBytes)
+    print("IN:",Bye)
+    assert Bye.type=="Request" and Bye.method=="BYE"
+
+    parameters["source_port"]=link[userb].port
+    m=buildMessage(message["200_OK_1"],parameters)
+    for h in ("To", "From", "CSeq","Via","Call-ID"):
+      m[h]=Bye[h]
+    print(m)
+    link[userb].send(m.contents())   
+
+if __name__=="__main__":
+    link=Connect([usera,userb],baseLocalPort=5080)
+    Register(usera)
+    Register(userb)
+    try:
+        flow(usera,userb)
+    finally:
+        Unregister(usera)
+        Unregister(userb)
+        
+
+    # Close the connection
+    #C.close()
+    # If I don't though, the socket remains open, else it goes into TIME_WAIT for 3 minutes

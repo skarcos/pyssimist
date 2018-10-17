@@ -124,7 +124,7 @@ def flow():
     print("IN:",inmessage)
     assert inmessage.type=="Response" and inmessage.status=="200 OK"
 
-    inBytes=link[usera].waitForData()
+    inBytes=link[userb].waitForData()
     Bye=parseBytes(inBytes)
     print("IN:",Bye)
     assert Bye.type=="Request" and Bye.method=="BYE"

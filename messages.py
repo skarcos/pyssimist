@@ -89,6 +89,7 @@ CSeq: Will be overwritten by incoming INVITE
 From: Will be overwritten by incoming INVITE
 To: Will be overwritten by incoming INVITE and a tag will be added
 Via: Will be overwritten by incoming INVITE
+Content-Type: application/sdp
 Content-Length: {bodyLength}
 
 v=0
@@ -104,7 +105,7 @@ m=video 6008 RTP/AVP 40
 a=rtpmap:40 H263-1998/90000
 ''',
          "Ack_1":'''\
-ACK sip:{userB}@{source_ip}:{source_port};transport={transport};maddr={dest_ip} SIP/2.0
+ACK sip:{userB}@{dest_ip}:{dest_port};transport={transport};maddr={dest_ip} SIP/2.0
 CSeq: 1 ACK
 Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
 To: Same as initial INVITE
