@@ -1,7 +1,7 @@
 from time import time
-import random,string
+import random,string,traceback
 from threading import Timer
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor,ProcessPoolExecutor, as_completed,wait
 
 def nowHex():
     " Current time in sec represented in hex - 4 digits "
@@ -69,12 +69,14 @@ class Load(object):
         else:
             raise Exception("Valid spawn argument values: threads, processes")
         self.start()
+        self.monitor()
 
     def start(self):
         '''
         Every :interval seconds, start :quantity flows
         '''
         if (self.duration > 0 and time()-self.startTime >= self.duration) or self.stopCondition:
+            self.stopCondition=True
             print("Execution ended")
             return
         t=Timer(self.interval,self.start)
@@ -83,9 +85,13 @@ class Load(object):
             self.runNextFlow()
 
     def runNextFlow(self):
-        with self.executor() as ex:
-            self.active.append(ex.submit(self.flow,*self.args))
+        ex=self.executor()
+        self.active.append(ex.submit(self.flow,*self.args))
 
     def monitor(self):
-        for inst in as_completed(self.active):
-            print(inst.result())
+        while self.active or and self.stopCondition:
+            for inst in as_completed(self.active):
+                try:
+                    inst.result()
+                except:
+                    traceback.print_exc()

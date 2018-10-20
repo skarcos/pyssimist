@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 link={}
 talkDuration=10
-parameters=util.dict_2({"dest_ip":"10.2.0.22",
+parameters=util.dict_2({"dest_ip":"10.2.28.54",
             "dest_port":5060,
             "transport":"tcp",
             "callId":util.randomCallID,
@@ -41,7 +41,7 @@ def Register(user):
     inBytes=L.waitForData()
     inmessage=parseBytes(inBytes)
     #print(inmessage)
-    assert inmessage.type=="Response" and inmessage.status=="200 OK"
+    assert inmessage.type=="Response" and inmessage.status=="200 OK","{}\n{}".format(user,inmessage)
 
 
 def Unregister(user):
@@ -62,13 +62,15 @@ def flow(users):
     inBytes=link[usera].waitForData()
     inmessage=parseBytes(inBytes)
     #print("IN:",inmessage)
-    assert inmessage.type=="Response" and inmessage.status=="100 Trying"
+    assert inmessage.type=="Response" and inmessage.status=="100 Trying",\
+           "Sent:\n{}Received:\n{}".fomrat(Invite,inmessage)
 
     inBytes=link[userb].waitForData()
     inmessageb=parseBytes(inBytes)
     #print("IN:",inmessageb)
-    assert inmessageb.type=="Request" and inmessageb.method=="INVITE"
-
+    assert inmessageb.type=="Request" and inmessageb.method=="INVITE",\
+           "A side sent:\n{}and got Trying, but B side received:\n{}".format(Invite,inmessage)
+    
     parameters["source_port"]=link[userb].port
     m=buildMessage(message["Trying_1"],parameters)
     for h in ("To", "From", "CSeq","Via","Call-ID"):
@@ -88,7 +90,8 @@ def flow(users):
     inBytes=link[usera].waitForData()
     inmessage=parseBytes(inBytes)
     #print("IN:",inmessage)
-    assert inmessage.type=="Response" and inmessage.status=="180 Ringing"
+    assert inmessage.type=="Response" and inmessage.status=="180 Ringing",\
+           "B side sent:\n{}but A side received:\n{}".format(Ringing,inmessage)
 
     parameters["source_port"]=link[userb].port
     m=buildMessage(message["200_OK_SDP_1"],parameters)
@@ -99,14 +102,16 @@ def flow(users):
     link[userb].send(m.contents())
 
     inBytes=link[userb].waitForData()
-    inmessage=parseBytes(inBytes)
-    #print("IN:",inmessage)
-    assert inmessage.type=="Request" and inmessage.method=="ACK"
+    ack=parseBytes(inBytes)
+    #print("IN:",ack)
+    assert ack.type=="Request" and ack.method=="ACK",\
+           "Sent:\n{}Received:\n{}".format(m,ack)
 
     inBytes=link[usera].waitForData()
     inmessage=parseBytes(inBytes)
     #print("IN:",inmessage)
-    assert inmessage.type=="Response" and inmessage.status=="200 OK"
+    assert inmessage.type=="Response" and inmessage.status=="200 OK",\
+           "B side got:\n{}but A side received:\n{}".format(ack,inmessage)
 
     parameters["source_port"]=link[usera].port
     m=buildMessage(message["Ack_1"],parameters)
@@ -128,12 +133,14 @@ def flow(users):
     inBytes=link[usera].waitForData()
     inmessage=parseBytes(inBytes)
     #print("IN:",inmessage)
-    assert inmessage.type=="Response" and inmessage.status=="200 OK"
+    assert inmessage.type=="Response" and inmessage.status=="200 OK",\
+           "Sent:\n{}Received:\n{}".format(m,inmessage)
 
     inBytes=link[userb].waitForData()
     Bye=parseBytes(inBytes)
     #print("IN:",Bye)
-    assert Bye.type=="Request" and Bye.method=="BYE"
+    assert Bye.type=="Request" and Bye.method=="BYE",\
+           "A side sent:\n{}B side received:\n{}".format(m,inmessage)
 
     parameters["source_port"]=link[userb].port
     m=buildMessage(message["200_OK_1"],parameters)
@@ -143,24 +150,25 @@ def flow(users):
     link[userb].send(m.contents())   
 
 if __name__=="__main__":
-    NumberOfUsers=100
-    CallsPerSecond=2
-    userPool=["302108100"+"%03d" % i for i in range(NumberOfUsers)]
+    NumberOfUsers=10
+    calls=1
+    secondsPer=3
+    userPool=["302128810"+"%03d" % i for i in range(NumberOfUsers)]
     link=Connect(userPool,baseLocalPort=6280)
     for user in userPool:
         Register(user)
         sleep(0.1)
-    try:
-        test=util.Load(flow,
-                       util.loop(userPool),
-                       duration=60,
-                       quantity=CallsPerSecond,
-                       spawn="threads")
-        test.monitor()
-    finally:
-        for user in userPool:
-            Unregister(user)
-            sleep(0.1)
+
+    test=util.Load(flow,
+                   util.loop(userPool),
+                   duration=60,
+                   quantity=calls,
+                   interval=secondsPer,
+                   spawn="threads")
+    
+    for user in userPool:
+        Unregister(user)
+        sleep(0.1)
 
     # Close the connection
     #C.close()
