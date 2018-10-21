@@ -80,14 +80,14 @@ class Load(object):
         '''
         Every :interval seconds, start :quantity flows
         '''
-        if (self.duration > 0 and time()-self.startTime >= self.duration) or self.stopCondition:
+        for i in range(self.quantity):
+            self.runNextFlow()
+        if self.duration == 0 or time()-self.startTime >= self.duration or self.stopCondition:
             self.stopCondition=True
             print("Execution ended")
             return
         t=Timer(self.interval,self.start)
         t.start()
-        for i in range(self.quantity):
-            self.runNextFlow()
 
     def runNextFlow(self):
         ex=self.executor()
