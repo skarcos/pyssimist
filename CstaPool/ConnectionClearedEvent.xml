@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConnectionClearedEvent
+  xmlns="http://www.ecma.ch/standards/ecma-323/csta/ed2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="
+      http://www.ecma.ch/standards/ecma-323/csta/ed2  file://localhost/X:/ips_bln/long_csta/ecma/connection-cleared-event.xsd
+  ">
+  <monitorCrossRefID>{CSTA_USE_MONITOR_CROSS_REF_ID}</monitorCrossRefID>
+  <droppedConnection>
+    <deviceID>{deviceID}</deviceID>
+  </droppedConnection>
+  <releasingDevice>
+    <deviceIdentifier>{releasingDevice}</deviceIdentifier>
+  </releasingDevice>
+  <localConnectionInfo>{localConnectionInfo}</localConnectionInfo>
+  <cause>{cause}</cause>
+</ConnectionClearedEvent>

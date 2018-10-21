@@ -115,7 +115,7 @@ Max-Forwards: 70
 Content-Length: 0
 ''',
          "Bye_1":'''\
-BYE sip:302108100501@10.2.0.22:5060;transport=tcp;maddr=10.2.0.22 SIP/2.0
+BYE sip:{userB}@10.2.0.22:5060;transport=tcp;maddr=10.2.0.22 SIP/2.0
 Call-ID: Same as initial INVITE
 CSeq: 2 BYE
 Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}

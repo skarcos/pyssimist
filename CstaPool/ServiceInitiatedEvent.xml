@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ServiceInitiatedEvent
+  xmlns="http://www.ecma.ch/standards/ecma-323/csta/ed2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="
+      http://www.ecma.ch/standards/ecma-323/csta/ed2  file://localhost/X:/ips_bln/long_csta/ecma/service-initiated-event.xsd
+  ">
+  <monitorCrossRefID>{CSTA_USE_MONITOR_CROSS_REF_ID}</monitorCrossRefID>
+  <initiatedConnection>
+    <deviceID>{deviceID}</deviceID>
+  </initiatedConnection>
+  <initiatingDevice>
+    <deviceIdentifier>{initiatingDevice}</deviceIdentifier>
+  </initiatingDevice>
+  <localConnectionInfo>{localConnectionInfo}</localConnectionInfo>
+  <cause>{cause}</cause>
+  <networkCallingDevice>
+    <deviceIdentifier>{networkCallingDevice}</deviceIdentifier>
+  </networkCallingDevice>
+  <networkCalledDevice>
+    <deviceIdentifier>{networkCalledDevice}</deviceIdentifier>
+  </networkCalledDevice>
+</ServiceInitiatedEvent>

@@ -29,6 +29,11 @@ def loop(sequence):
         for i in sequence: 
             yield i
 
+def serverThread(target,*args,**kwargs):
+    ' Start a thread '
+    ex=ThreadPoolExecutor()
+    thread=ex.submit(target,*args,**kwargs)
+    return thread
 
 class dict_2(dict):
     '''
@@ -89,7 +94,7 @@ class Load(object):
         self.active.append(ex.submit(self.flow,*self.args))
 
     def monitor(self):
-        while self.active or and self.stopCondition:
+        while any(x.running() for x in self.active) or not self.stopCondition:
             for inst in as_completed(self.active):
                 try:
                     inst.result()

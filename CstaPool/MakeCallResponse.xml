@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MakeCallResponse
+  xmlns="http://www.ecma.ch/standards/ecma-323/csta/ed2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="
+      http://www.ecma.ch/standards/ecma-323/csta/ed2  file://localhost/X:/ips_bln/long_csta/ecma/make-call.xsd
+  ">
+  <callingDevice>
+    <deviceID>{deviceID}</deviceID>
+  </callingDevice>
+</MakeCallResponse>

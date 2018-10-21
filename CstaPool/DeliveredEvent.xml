@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DeliveredEvent
+  xmlns="http://www.ecma.ch/standards/ecma-323/csta/ed2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="
+      http://www.ecma.ch/standards/ecma-323/csta/ed2  file://localhost/X:/ips_bln/long_csta/ecma/delivered-event.xsd
+  ">
+  <monitorCrossRefID>{CSTA_USE_MONITOR_CROSS_REF_ID}</monitorCrossRefID>
+  <connection>
+    <deviceID>{deviceID}</deviceID>
+  </connection>
+  <alertingDevice>
+    <deviceIdentifier>{alertingDevice}</deviceIdentifier>
+  </alertingDevice>
+  <callingDevice>
+    <deviceIdentifier>{callingDevice}</deviceIdentifier>
+  </callingDevice>
+  <calledDevice>
+    <deviceIdentifier>{deviceIdentifier}</deviceIdentifier>
+  </calledDevice>
+  <lastRedirectionDevice>
+    <numberDialed>{numberDialed}</numberDialed>
+  </lastRedirectionDevice>
+  <localConnectionInfo>{localConnectionInfo}</localConnectionInfo>
+  <cause>{cause}</cause>
+  <networkCallingDevice>
+    <deviceIdentifier>{networkCallingDevice}</deviceIdentifier>
+  </networkCallingDevice>
+  <networkCalledDevice>
+    <deviceIdentifier>{networkCalledDevice}</deviceIdentifier>
+  </networkCalledDevice>
+</DeliveredEvent>
