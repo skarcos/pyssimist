@@ -50,7 +50,6 @@ if __name__=="__main__":
     m=b'SIP/2.0 403 Forbidden\r\nWarning: 399 10.2.0.22 "Originating Endpoint is not configured or registered on system. Check provisioning of 3021005533, , 10.2.31.5, 10.2.0.24."\r\nCall-ID: 5bc4d2b1lKza5n\r\nCSeq: 1 OPTIONS\r\nTo: <sip:10.2.0.24:5060>\r\nFrom: <sip:3021005533@10.2.31.5:50080>;tag=snl_5bc4d2b14Y\r\nContent-Length: 0\r\nVia: SIP/2.0/TCP 10.2.31.5:50080;branch=5bc4d2b1cswcPR1cq4nQ\r\n\r\n'
     n=b'SIP/2.0 400 Bad Request\r\nWarning: 399 10.2.0.22 "Request mandatory header is missing or incorrect. Mandatory Header CSEQ-Method mismatch."\r\nVia: SIP/2.0/TCP 10.2.31.5:5080;branch=5bc619b78AKFDlh5mRGL\r\nFrom: "3021005533" <sip:3021005533@10.2.0.22:5060>;tag=snl_5bc619b7OD;epid=SCD0n\r\nCSeq: 1 OPTIONS\r\nCall-ID: 5bc619b7TTYmPW\r\nTo: <sip:10.2.0.22:5060>;tag=snl_PT47YjDdJE\r\nContent-Length: 0\r\n\r\n'
     s=parseBytes(n)
-    print(s)
     i='''
 INVITE sip:302108100501@10.2.31.5:4745;transport=tcp SIP/2.0
 To: <sip:302108100501@10.2.31.5>
@@ -84,4 +83,4 @@ m=video 6008 RTP/AVP 40
 a=rtpmap:40 H263-1998/90000
 '''
     j=buildMessage(i,{})
-    print(j)
+    

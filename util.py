@@ -24,9 +24,15 @@ def getLocalIP():
 def randomBranch():
     return nowHex()+randStr(24)
 
+def epid(*args):
+    "User args to get a unique epid"
+    # if we always seed random generation with the same string, the next random number will be the same
+    random.seed(''.join(args))
+    return hex(random.getrandbits(32))[2:]
+
 def loop(sequence):
     while True:
-        for i in sequence: 
+        for i in sequence:
             yield i
 
 def serverThread(target,*args,**kwargs):
@@ -94,7 +100,7 @@ class Load(object):
         self.active.append(ex.submit(self.flow,*self.args))
 
     def monitor(self):
-        while any(x.running() for x in self.active) or not self.stopCondition:
+        while any(x.running() for x in self.active) or not self.stopCondition:            
             for inst in as_completed(self.active):
                 try:
                     inst.result()
