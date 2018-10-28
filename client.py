@@ -1,5 +1,6 @@
 import socket
 from time import sleep
+from tc_logging import debug
 
 class TCPClient(object):
     def __init__(self,ip,port):
@@ -18,10 +19,13 @@ class TCPClient(object):
             
     def send(self,data,encoding="utf8"):
         #self.socket.sendall(binascii.hexlify(bytes(data,"utf8")))
+        print(data)
         if type(data)==type(b''):
             self.socket.sendall(data)
+            debug("Sent:\n\n"+data.decode("utf8","backslashreplace").replace("\r\n","\n"))
         else:
             self.socket.sendall(bytes(data,encoding))
+            debug("Sent:\n\n"+data.replace("\r\n","\n"))
 
     def waitForData(self,timeout=None,buffer=4096):
         bkp=self.socket.gettimeout()
@@ -30,6 +34,7 @@ class TCPClient(object):
             data = self.socket.recv(buffer)
         finally:
             self.socket.settimeout(bkp)
+        debug("Received:\n\n"+data.decode("utf8","backslashreplace").replace("\r\n","\n"))
         return data
 
     def waitForCstaData(self):
@@ -39,4 +44,5 @@ class TCPClient(object):
         while len(data) < datalength:
             data+=self.socket.recv(datalength - len(data))
         #print('message:\n{}\nsize{}\n'.format(data,datalength))
+        debug("Received:\n\n"+data.decode("utf8","backslashreplace").replace("\r\n","\n"))
         return header+data

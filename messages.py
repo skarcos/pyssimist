@@ -7,7 +7,7 @@ From: <sip:{user}@{source_ip}:{source_port}>;tag=snl_{fromTag}
 User-Agent: OpenScape Voice V9R0
 Content-Length: 0
 Max-Forwards: 70
-Via: SIP/2.0/TCP {source_ip}:{source_port};branch={viaBranch}
+Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
 
 ''',
          "Register_1":'''\
@@ -19,7 +19,7 @@ From: "{user}" <sip:{user}@{dest_ip}:{dest_port}>;tag=snl_{fromTag}
 User-Agent: Python tools
 Content-Length: 0
 Max-Forwards: 70
-Via: SIP/2.0/TCP {source_ip}:{source_port};branch={viaBranch}
+Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
 Accept: application/dls-contact-me
 Supported: X-Siemens-Proxy-State
 Contact: "{user}" <sip:{user}@{source_ip}:{source_port};transport={transport}>;expires={expires}
@@ -33,7 +33,7 @@ From: "{user}" <sip:{user}@{dest_ip}:{dest_port}>;tag=snl_{fromTag};epid={epid}
 User-Agent: Python tools
 Content-Length: 0
 Max-Forwards: 70
-Via: SIP/2.0/TCP {source_ip}:{source_port};branch={viaBranch}
+Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
 Accept: application/dls-contact-me
 Supported: X-Siemens-Proxy-State
 Contact: "{user}" <sip:{user}@{source_ip}:{source_port};transport={transport}>;expires={expires}
@@ -78,7 +78,7 @@ CSeq: Will be overwritten by incoming INVITE
 From: Will be overwritten by incoming INVITE
 To: Will be overwritten by incoming INVITE and a tag will be added
 Via: Will be overwritten by incoming INVITE
-Contact: sip:{userB}@{source_ip}:{source_port};transport={transport}
+Contact: <sip:{userB}@{source_ip}:{source_port};transport={transport}>
 Content-Length: 0
 ''',
          "200_OK_SDP_1":'''\
@@ -115,7 +115,7 @@ Max-Forwards: 70
 Content-Length: 0
 ''',
          "Bye_1":'''\
-BYE sip:{userB}@10.2.0.22:5060;transport=tcp;maddr=10.2.0.22 SIP/2.0
+BYE sip:{userB}@{dest_ip}:{dest_port};transport={transport};maddr={dest_ip} SIP/2.0
 Call-ID: Same as initial INVITE
 CSeq: 2 BYE
 Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
