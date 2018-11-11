@@ -1,37 +1,37 @@
-from client import TCPClient
-from SipParser import parseBytes,buildMessage
-from CstaParser import parseBytes as parseBytes_csta
-from CstaParser import buildMessage as buildMessage_csta
-from CstaParser import buildMessageFromFile
-from messages import message
+import sys
+sys.path.append("..")
+from common.client import TCPClient
+from sip.SipParser import parseBytes,buildMessage
+from csta.CstaParser import parseBytes as parseBytes_csta
+from csta.CstaParser import buildMessageFromFile
+from sip.messages import message
 from time import sleep
 from socket import timeout
-import util
-from concurrent.futures import ThreadPoolExecutor
+from common import util
 import os
 
 xmlpath=r".\CstaPool"
 link={}
 serverThreads=[]
 talkDuration=10
-parameters=util.dict_2({"dest_ip":"10.2.28.54",
+parameters= util.dict_2({"dest_ip": "10.2.28.54",
                         "dest_ip_csta":"10.2.28.60",
                         "dest_port":5060,
                         "transport":"tcp",
-                        "callId":util.randomCallID,
-                        "fromTag":util.randomTag,
-                        "source_ip":util.getLocalIP,
-            #            "source_port":5080,
-                        "viaBranch":util.randomBranch,
-                        "epid":lambda x=6: "SC"+util.randStr(x),
+                        "callId": util.randomCallID,
+                        "fromTag": util.randomTag,
+                        "source_ip": util.getLocalIP,
+                         #            "source_port":5080,
+                        "viaBranch": util.randomBranch,
+                        "epid":lambda x=6: "SC" + util.randStr(x),
                         "bodyLength":"0",
                         "expires":"360"
-                        })
+                         })
 
 def getxml(name):
     return os.path.join(xmlpath,name)
 
-def ConnectSip(user_range,baseLocalPort,localIP=util.getLocalIP()):
+def ConnectSip(user_range, baseLocalPort, localIP=util.getLocalIP()):
     " Open the connections for the users "
     connection_pool={}
     localPort=baseLocalPort
@@ -42,7 +42,7 @@ def ConnectSip(user_range,baseLocalPort,localIP=util.getLocalIP()):
         localPort=localPort+1
     return connection_pool
 
-def ConnectCsta(user_range,localIP=util.getLocalIP()):
+def ConnectCsta(user_range, localIP=util.getLocalIP()):
     " Open the connections for the users "
     connection_pool={}
     # We set 0 port to connect to any available port
@@ -121,8 +121,8 @@ def flow(users):
     userb=next(users)
     parameters["userA"]=usera
     parameters["userB"]=userb
-    serverThreads.append(util.serverThread(WaitForCstaEvents,usera,assertLeg="A"))
-    serverThreads.append(util.serverThread(WaitForCstaEvents,userb,assertLeg="B"))
+    serverThreads.append(util.serverThread(WaitForCstaEvents, usera, assertLeg="A"))
+    serverThreads.append(util.serverThread(WaitForCstaEvents, userb, assertLeg="B"))
     parameters["source_port"]=link[usera].port
     Invite=buildMessage(message["Invite_SDP_1"],parameters)
     #print(Invite)
@@ -155,7 +155,7 @@ def flow(users):
     Ringing=buildMessage(message["Ringing_1"],parameters)
     for h in ("To", "From", "CSeq","Via","Call-ID"):
       Ringing[h]=inmessageb[h]
-    toTag=";tag="+util.randStr(8)
+    toTag=";tag=" + util.randStr(8)
     Ringing["To"]=Ringing["To"]+toTag
     #print(Ringing)
     link[userb].send(Ringing.contents())
@@ -242,12 +242,12 @@ if __name__=="__main__":
             MonitorStart(user)
             sleep(0.1)
 
-        test=util.Load(flow,
-                       util.loop(userPool),
-                       duration=0,
-                       quantity=calls,
-                       interval=secondsPer,
-                       spawn="threads")
+        test= util.Load(flow,
+                        util.loop(userPool),
+                        duration=0,
+                        quantity=calls,
+                        interval=secondsPer,
+                        spawn="threads")
         
     finally:
         for user in userPool:

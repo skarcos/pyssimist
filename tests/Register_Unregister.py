@@ -1,19 +1,20 @@
-from client import TCPClient
-from SipParser import parseBytes,prepareMessage
-from messages import message
-import util
-
+import sys
+sys.path.append("..")
+from common.client import TCPClient
+from sip.SipParser import parseBytes,prepareMessage
+from sip.messages import message
+from common import util
 
 parameters={"dest_ip":"10.2.0.22",
             "dest_port":5060,
             "transport":"tcp",
-            "callId":util.randomCallID(),
+            "callId": util.randomCallID(),
             "user":"302108100000",
-            "fromTag":util.randomTag(),
-            "sourceIP":util.getLocalIP(),
+            "fromTag": util.randomTag(),
+            "sourceIP": util.getLocalIP(),
             "sourcePort":5080,
-            "viaBranch":util.randomBranch(),
-            "epid":"SC"+util.randHex(3),
+            "viaBranch": util.randomBranch(),
+            "epid":"SC" + util.randHex(3),
             "expires":"360"
             }
 

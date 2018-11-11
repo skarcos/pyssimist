@@ -1,36 +1,37 @@
-from client import TCPClient
-from SipParser import parseBytes,buildMessage
-from messages import message
+import sys
+sys.path.append("..")
+from common.client import TCPClient
+from sip.SipParser import parseBytes,buildMessage
+from sip.messages import message
 from time import sleep
 from socket import timeout
-import util,traceback
-from concurrent.futures import ThreadPoolExecutor
+import traceback
+from common import util
 from threading import local
 from copy import copy
-import os
 
 link={}
 agentThreads=[]
 busyCallers=[]
 # Create thread local data
 data=local()
-parameters=util.dict_2({"dest_ip_orig":"10.5.42.44",
+parameters= util.dict_2({"dest_ip_orig": "10.5.42.44",
                              "dest_ip_psap":"10.9.65.45",
                              "dest_port":5060,
                              "transport":"tcp",
-                             "callId":util.randomCallID,
-                             "fromTag":util.randomTag,
+                             "callId": util.randomCallID,
+                             "fromTag": util.randomTag,
                              "source_ip":"10.2.31.5",
-                 #            "source_port":5080,
-                             "viaBranch":util.randomBranch,
-                             "epid":lambda x=6: "SC"+util.randStr(x),
+                         #            "source_port":5080,
+                             "viaBranch": util.randomBranch,
+                             "epid":lambda x=6: "SC" + util.randStr(x),
                              "bodyLength":"0",
                              "expires":"360",
                              "talkDuration":10
-                             })
+                         })
 
 
-def ConnectSip(user_range,baseLocalPort,localIP=util.getLocalIP()):
+def ConnectSip(user_range, baseLocalPort, localIP=util.getLocalIP()):
     " Open the connections for the users "
     connection_pool={}
     localPort=baseLocalPort
@@ -60,7 +61,7 @@ def Register(user):
     parameters["source_ip"]=L.ip
     parameters["dest_ip"]=L.rip
     parameters["dest_port"]=L.rport
-    parameters["epid"]=util.epid(user)
+    parameters["epid"]= util.epid(user)
     m=buildMessage(message["Register_2"],parameters)
     #print(m)
     L.send(m.contents())
@@ -111,7 +112,7 @@ def WaitForCall(user,param):
         for h in ("Allow","Allow-Events","X-Siemens-Call-Type"):
             if h in invite.headers:
                 Ringing[h]=invite[h]
-        toTag=";tag="+util.randStr(8)
+        toTag=";tag=" + util.randStr(8)
         Ringing["To"]=Ringing["To"]+toTag
         #print(Ringing)
         link[user].send(Ringing.contents())
@@ -230,16 +231,16 @@ if __name__=="__main__":
             sleep(0.1)
 
         for agent in agents:
-            agentThreads.append(util.serverThread(WaitForCall,agent,parameters))
+            agentThreads.append(util.serverThread(WaitForCall, agent, parameters))
             sleep(0.1)
 
-        test=util.Load(flow,
-                       util.loop(callers),
-                       pilot,
-                       parameters,
-                       duration=0,
-                       quantity=calls,
-                       interval=secondsPer)
+        test= util.Load(flow,
+                        util.loop(callers),
+                        pilot,
+                        parameters,
+                        duration=0,
+                        quantity=calls,
+                        interval=secondsPer)
         
     finally:
         for user in callers+agents:

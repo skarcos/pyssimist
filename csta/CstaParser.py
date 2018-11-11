@@ -1,6 +1,10 @@
+"""\
+Purpose: Functions for parsing CSTA messages and creating CstaMessage objects
+Initial Version: Costas Skarakis 11/11/2018
+"""
 import re
 import xml.etree.ElementTree as ET
-from CstaMessage import CstaMessage
+from csta.CstaMessage import CstaMessage
 
 ENCODING="utf8"
 

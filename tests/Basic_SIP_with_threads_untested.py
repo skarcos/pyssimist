@@ -1,10 +1,11 @@
-from client import TCPClient
-from SipParser import parseBytes,buildMessage
-from messages import message
+import sys
+sys.path.append("..")
+from common.client import TCPClient
+from sip.SipParser import parseBytes,buildMessage
+from sip.messages import message
 from time import sleep
 from socket import timeout
-import util
-from concurrent.futures import ThreadPoolExecutor
+from common import util
 from threading import local
 import os
 
@@ -15,24 +16,24 @@ busyCallers=[]
 talkDuration=10
 # Create thread local data
 data=local()
-data.parameters=util.dict_2({"dest_ip_orig":"10.5.42.44",
+data.parameters= util.dict_2({"dest_ip_orig": "10.5.42.44",
                              "dest_ip_psap":"10.9.65.45",
                              "dest_port":5060,
                              "transport":"tcp",
-                             "callId":util.randomCallID,
-                             "fromTag":util.randomTag,
+                             "callId": util.randomCallID,
+                             "fromTag": util.randomTag,
                              "source_ip":"10.2.31.5",
-                 #            "source_port":5080,
-                             "viaBranch":util.randomBranch,
-                             "epid":lambda x=6: "SC"+util.randStr(x),
+                              #            "source_port":5080,
+                             "viaBranch": util.randomBranch,
+                             "epid":lambda x=6: "SC" + util.randStr(x),
                              "bodyLength":"0",
                              "expires":"1800"
-                             })
+                              })
 
 def getxml(name):
     return os.path.join(xmlpath,name)
 
-def ConnectSip(user_range,baseLocalPort,localIP=util.getLocalIP()):
+def ConnectSip(user_range, baseLocalPort, localIP=util.getLocalIP()):
     " Open the connections for the users "
     connection_pool={}
     localPort=baseLocalPort
@@ -85,7 +86,7 @@ def WaitForCall(user):
         Ringing=buildMessage(message["Ringing_1"],data.parameters)
         for h in ("To", "From", "CSeq","Via","Call-ID"):
           Ringing[h]=inmessageb[h]
-        toTag=";tag="+util.randStr(8)
+        toTag=";tag=" + util.randStr(8)
         Ringing["To"]=Ringing["To"]+toTag
         #print(Ringing)
         link[user].send(Ringing.contents())
@@ -194,14 +195,14 @@ if __name__=="__main__":
             sleep(0.1)
 
         for agent in agents:
-            agentThreads.append(util.serverThread(WaitForCall,user))
+            agentThreads.append(util.serverThread(WaitForCall, user))
             sleep(0.1)
 
-        test=util.Load(flow,
-                       util.loop(callers),
-                       duration=0,
-                       quantity=calls,
-                       interval=secondsPer)
+        test= util.Load(flow,
+                        util.loop(callers),
+                        duration=0,
+                        quantity=calls,
+                        interval=secondsPer)
         
     finally:
         for user in userPool:

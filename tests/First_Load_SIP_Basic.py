@@ -1,26 +1,27 @@
-from client import TCPClient
-from SipParser import parseBytes,buildMessage
-from messages import message
+import sys
+sys.path.append("..")
+from common.client import TCPClient
+from sip.SipParser import parseBytes,buildMessage
+from sip.messages import message
 from time import sleep
-import util
-from concurrent.futures import ThreadPoolExecutor
+from common import util
 
 link={}
 talkDuration=10
-parameters=util.dict_2({"dest_ip":"10.2.28.54",
+parameters= util.dict_2({"dest_ip": "10.2.28.54",
             "dest_port":5060,
             "transport":"tcp",
-            "callId":util.randomCallID,
-            "fromTag":util.randomTag,
-            "source_ip":util.getLocalIP,
-#            "source_port":5080,
-            "viaBranch":util.randomBranch,
-            "epid":lambda x=6: "SC"+util.randStr(x),
+            "callId": util.randomCallID,
+            "fromTag": util.randomTag,
+            "source_ip": util.getLocalIP,
+                         #            "source_port":5080,
+            "viaBranch": util.randomBranch,
+            "epid":lambda x=6: "SC" + util.randStr(x),
             "bodyLength":"0",
             "expires":"360"
-            })
+                         })
 
-def Connect(user_range,baseLocalPort,localIP=util.getLocalIP()):
+def Connect(user_range, baseLocalPort, localIP=util.getLocalIP()):
     " Open the connections for the users "
     connection_pool={}
     localPort=baseLocalPort
@@ -82,7 +83,7 @@ def flow(users):
     Ringing=buildMessage(message["Ringing_1"],parameters)
     for h in ("To", "From", "CSeq","Via","Call-ID"):
       Ringing[h]=inmessageb[h]
-    toTag=";tag="+util.randStr(8)
+    toTag=";tag=" + util.randStr(8)
     Ringing["To"]=Ringing["To"]+toTag
     #print(Ringing)
     link[userb].send(Ringing.contents())
@@ -159,12 +160,12 @@ if __name__=="__main__":
         Register(user)
         sleep(0.1)
 
-    test=util.Load(flow,
-                   util.loop(userPool),
-                   duration=60,
-                   quantity=calls,
-                   interval=secondsPer,
-                   spawn="threads")
+    test= util.Load(flow,
+                    util.loop(userPool),
+                    duration=60,
+                    quantity=calls,
+                    interval=secondsPer,
+                    spawn="threads")
     
     for user in userPool:
         Unregister(user)
