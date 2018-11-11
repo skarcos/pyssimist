@@ -2,14 +2,17 @@
 Purpose: CSTA message object
 Initial Version: Costas Skarakis 11/11/2018
 """
+import os
 import xml.etree.ElementTree as ET
 import io
 
+xmlpath = os.path.join(os.path.realpath(__file__).replace(os.path.basename(__file__), ''), "CstaPool")
+
 
 class CstaMessage(object):
-    '''
+    """
     Representation of a CSTA message
-    '''
+    """
 
     def __init__(self, header, xml_tree, encoding="UTF-8",
                  namespace="http://www.ecma-international.org/standards/ecma-323/csta/ed4"):
@@ -47,7 +50,7 @@ class CstaMessage(object):
         return repr(self)
 
     def contents(self):
-        "returns byte string"
+        """ returns byte string """
         # Recalculate length
         self.size = bytes.fromhex("%08X" % (len(self.message()) + 8))
         return self.size + \

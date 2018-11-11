@@ -4,13 +4,14 @@ from common.client import TCPClient
 from sip.SipParser import parseBytes,buildMessage
 from csta.CstaParser import parseBytes as parseBytes_csta
 from csta.CstaParser import buildMessageFromFile
+from csta.CstaMessage import xmlpath
 from sip.messages import message
 from time import sleep
 from socket import timeout
 from common import util
 import os
 
-xmlpath=r".\CstaPool"
+
 link={}
 serverThreads=[]
 talkDuration=10
