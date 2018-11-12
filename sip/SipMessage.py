@@ -16,9 +16,15 @@ class SipMessage(object):
     def __init__(self, header_dict, body):
         self.header = header_dict
         self.headers = self.header
+        self.status = None
+        self.method = None
+        self.status_line = ""
+        self.request_line = ""
         self.body = body
         if body:
             self.header["Content-Length"] = str(len(body.strip()) + 2)
+        else:
+            self.header["Content-Length"] = "0"
 
     def __getitem__(self, key):
         return self.header[key]
@@ -45,6 +51,14 @@ class SipMessage(object):
 
     def contents(self):
         return self.message()
+
+    def get_status_or_method(self):
+        """" Return what kind of message this is. Handy for assertions """
+        if self.type == "Request":
+            return self.method
+        elif self.type == "Response":
+            return self.status
+
 
     def increase_cseq(self):
         cseq, method = self.header["CSeq"].split()

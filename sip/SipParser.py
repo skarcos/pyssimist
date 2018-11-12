@@ -11,7 +11,7 @@ MANDATORY_REQUEST_HEADERS = set(("To", "From", "CSeq", "Call-ID", "Max-Forwards"
 
 def buildMessage(message, parameters):
     tString = message.strip().format(**parameters)
-    bString = bytes(tString.replace("\n", "\r\n") + 2 * "\r\n", encoding=ENCODING)
+    bString = bytes(tString.replace("\n", "\r\n").replace("\r\r\n", "\r\n") + 2 * "\r\n", encoding=ENCODING)
     sipMessage = parseBytes(bString)
     return sipMessage
 

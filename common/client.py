@@ -27,7 +27,8 @@ class TCPClient(object):
         print(data)
         if type(data) == type(b''):
             self.socket.sendall(data)
-            debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+            debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
+                                                                                                               "\n"))
         else:
             self.socket.sendall(bytes(data, encoding))
             debug("Sent from port {}:\n\n".format(self.port) + data.replace("\r\n", "\n"))
@@ -43,13 +44,14 @@ class TCPClient(object):
         debug("Received:\n\n" + data.decode("utf8", "backslashreplace").replace("\r\n", "\n"))
         return data
 
-    def waitForSipData(self, timeout=None, buffer=4096):
+    def waitForSipData(self, timeout=None):
         debug("Waiting on port {}".format(self.port))
         bkp = self.socket.gettimeout()
         if timeout: self.socket.settimeout(timeout)
         try:
             content_length = -1
-            data = self.sockfile.readline()
+            data = b""
+            data += self.sockfile.readline()
 
             while True:
                 line = self.sockfile.readline()
@@ -57,7 +59,8 @@ class TCPClient(object):
                 if not line.strip():
                     break
                 header, value = [x.strip() for x in line.split(b":", 1)]
-                if header == b"Content-Length": content_length = int(value)
+                if header == b"Content-Length":
+                    content_length = int(value)
 
             if content_length > 0:
                 data += self.sockfile.read(content_length)
@@ -70,7 +73,7 @@ class TCPClient(object):
             debug(line.decode())
             raise
         except socket.timeout:
-            debug(data)
+            debug('Data received before timeout: "{}"'.format(data.decode()))
             raise
         finally:
             self.socket.settimeout(bkp)
@@ -86,3 +89,20 @@ class TCPClient(object):
         # print('message:\n{}\nsize{}\n'.format(data,datalength))
         debug("Received:\n\n" + (header + data).decode("utf8", "backslashreplace").replace("\r\n", "\n"))
         return header + data
+
+
+class UDPClient(TCPClient):
+    def __init__(self, ip, port):
+        self.ip = ip
+        self.port = port
+        self.rip, self.rport = None, None
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.bind((self.ip, self.port))
+        self.socket.settimeout(5.0)
+        self.sockfile = self.socket.makefile(mode='rb')
+
+    def connect(self, dest_ip, dest_port):
+        """ UDP doesn't connect so this just sets the instance variables """
+        self.rip = dest_ip
+        self.rport = dest_port
+
