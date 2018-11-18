@@ -4,9 +4,8 @@ Initial Version: Costas Skarakis 11/11/2018
 """
 import random
 import string
-import traceback
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
-from threading import Timer
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from threading import Timer, Thread
 from time import time
 
 
@@ -81,8 +80,7 @@ class Load(object):
                  interval=1.0,
                  quantity=1,
                  duration=0,
-                 stopCondition=None,
-                 spawn="threads"):
+                 stopCondition=None):
         self.flow = flow
         self.args = flow_args
         self.interval = interval
@@ -91,14 +89,6 @@ class Load(object):
         self.stopCondition = stopCondition
         self.startTime = time()
         self.active = []
-        if spawn == "threads":
-            self.executor = ThreadPoolExecutor
-        elif spawn == "processes":
-            self.executor = ProcessPoolExecutor
-        else:
-            raise Exception("Valid spawn argument values: threads, processes")
-        self.start()
-        self.monitor()
 
     def start(self):
         """
@@ -106,21 +96,25 @@ class Load(object):
         """
         for i in range(self.quantity):
             self.runNextFlow()
-        if self.duration == 0 or time() - self.startTime >= self.duration or self.stopCondition:
-            self.stopCondition = True
-            print("Execution ended")
-            return
-        t = Timer(self.interval, self.start)
-        t.start()
+        if not self.stopCondition and (self.duration < 0 or time() - self.startTime < self.duration):
+            Timer(self.interval, self.start).start()
+        else:
+            self.stop()
+
+    def stop(self):
+        """
+        Set the stopCondition to stop so that no new execution will be scheduled.
+        The running executions will not be interrupted
+        """
+        self.stopCondition = True
 
     def runNextFlow(self):
-        ex = self.executor()
-        self.active.append(ex.submit(self.flow, *self.args))
+        c = Thread(target=self.flow, args=self.args)
+        c.start()
+        self.active.append(c)
 
     def monitor(self):
-        while any(x.running() for x in self.active) or not self.stopCondition:
-            for inst in as_completed(self.active):
-                try:
-                    inst.result()
-                except:
-                    traceback.print_exc()
+        while self.active or not self.stopCondition:
+            for inst in (ins for ins in self.active if not ins.is_alive()):
+                inst.join()
+                self.active.remove(inst)
