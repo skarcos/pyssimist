@@ -10,7 +10,10 @@ MANDATORY_REQUEST_HEADERS = set(("To", "From", "CSeq", "Call-ID", "Max-Forwards"
 
 
 def buildMessage(message, parameters):
+    # remove whitespace from start and end TODO test this change on existing testcases
+    message = re.sub("\n +","\n",message)
     tString = message.strip().format(**parameters)
+    # replace new lines
     bString = bytes(tString.replace("\n", "\r\n").replace("\r\r\n", "\r\n") + 2 * "\r\n", encoding=ENCODING)
     sipMessage = parseBytes(bString)
     return sipMessage

@@ -24,7 +24,6 @@ class TCPClient(object):
 
     def send(self, data, encoding="utf8"):
         # self.socket.sendall(binascii.hexlify(bytes(data,"utf8")))
-        print(data)
         if type(data) == type(b''):
             self.socket.sendall(data)
             debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
