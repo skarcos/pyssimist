@@ -254,8 +254,7 @@ if __name__ == "__main__":
                          util.loop(userPool),
                          duration=0,
                          quantity=calls,
-                         interval=secondsPer,
-                         spawn="threads")
+                         interval=secondsPer)
 
     finally:
         for user in userPool:

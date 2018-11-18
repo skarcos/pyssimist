@@ -164,8 +164,7 @@ if __name__=="__main__":
                     util.loop(userPool),
                     duration=60,
                     quantity=calls,
-                    interval=secondsPer,
-                    spawn="threads")
+                    interval=secondsPer)
     
     for user in userPool:
         Unregister(user)
