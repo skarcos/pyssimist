@@ -55,7 +55,7 @@ class SipEndpoint(object):
             }
         )
 
-    def send_new(self, target_sip_ep=None, message_string="", expected_response=None):
+    def send_new(self, target_sip_ep=None, message_string="", expected_response=None, ignore_messages=[]):
         """ Start a new dialog and send a message """
         if target_sip_ep:
             self.parameters["userA"] = self.number
@@ -74,18 +74,18 @@ class SipEndpoint(object):
 
         if expected_response:
             try:
-                self.waitForMessage(expected_response)
+                self.waitForMessage(expected_response, ignore_messages)
             except AssertionError:
                 raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
                                                                             self.last_received_message.status,
                                                                             self.last_sent_message.method,
                                                                             self.last_received_message))
 
-    def send(self, message_string="", expected_response=None):
+    def send(self, message_string="", expected_response=None, ignore_messages=[]):
         """ Send a message within a dialog """
         self.reply(message_string)
         if expected_response:
-            self.waitForMessage(expected_response)
+            self.waitForMessage(expected_response, ignore_messages)
 
     def reply(self, message_string):
         """ Send a response to a previously received message """
@@ -102,20 +102,22 @@ class SipEndpoint(object):
             m["CSeq"] = self.last_received_message["CSeq"]
         else:
             # This is not a response, but a new request in the same dialog, so fix the CSeq
-            # TODO: fix CSeq according to RFC3261
+            # TODO: fix CSeq according to RFC3261 and ACK according to section 17.1.1.3
             self.parameters["cseq"] += 1
             m["CSeq"] = "{} {}".format(self.parameters["cseq"], m.method)
         self.link.send(m.contents())
 
-    def waitForMessage(self, message_type):
+    def waitForMessage(self, message_type, ignore_messages=[]):
         """
         Wait for a specific type of SIP message.
         :message_type is a string that we will make sure is
         contained in the received message request or response line
         """
-        inbytes = self.link.waitForSipData()
-        inmessage = self.handleDA(self.last_sent_message, parseBytes(inbytes))
-        self.last_received_message = inmessage
+        inmessage=None
+        while not inmessage or inmessage.get_status_or_method() in ignore_messages:
+            inbytes = self.link.waitForSipData()
+            inmessage = self.handleDA(self.last_sent_message, parseBytes(inbytes))
+            self.last_received_message = inmessage
         assert message_type in inmessage.get_status_or_method(), \
             '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.get_status_or_method(), message_type)
 

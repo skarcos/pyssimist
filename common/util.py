@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from threading import Timer, Thread
 from time import time
 
+from common.tc_logging import logger
+
 
 def nowHex():
     """ Current time in sec represented in hex - 4 digits """
@@ -109,7 +111,7 @@ class Load(object):
         self.stopCondition = True
 
     def runNextFlow(self):
-        c = Thread(target=self.flow, args=self.args)
+        c = LoadThread(target=self.flow, args=self.args)
         c.start()
         self.active.append(c)
 
@@ -118,3 +120,12 @@ class Load(object):
             for inst in (ins for ins in self.active if not ins.is_alive()):
                 inst.join()
                 self.active.remove(inst)
+
+
+class LoadThread(Thread):
+    """ I had to make a custom thread class to handle exceptions """
+    def run(self):
+        try:
+            super().run()
+        except:
+            logger.exception("Exception in Thread")

@@ -40,7 +40,7 @@ class TCPClient(object):
             data = self.socket.recv(buffer)
         finally:
             self.socket.settimeout(bkp)
-        debug("Received:\n\n" + data.decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+        debug("Received on port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n", "\n"))
         return data
 
     def waitForSipData(self, timeout=None):
@@ -76,7 +76,7 @@ class TCPClient(object):
             raise
         finally:
             self.socket.settimeout(bkp)
-        debug("Received:\n\n" + data.decode("utf8").replace("\r\n", "\n"))
+        debug("Received on port {}:\n\n".format(self.port) + data.decode("utf8").replace("\r\n", "\n"))
         return data
 
     def waitForCstaData(self):
@@ -86,7 +86,7 @@ class TCPClient(object):
         while len(data) < datalength:
             data += self.socket.recv(datalength - len(data))
         # print('message:\n{}\nsize{}\n'.format(data,datalength))
-        debug("Received:\n\n" + (header + data).decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+        debug("Received on port {}:\n\n".format(self.port) + (header + data).decode("utf8", "backslashreplace").replace("\r\n", "\n"))
         return header + data
 
 
@@ -99,9 +99,3 @@ class UDPClient(TCPClient):
         self.socket.bind((self.ip, self.port))
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
-
-    def connect(self, dest_ip, dest_port):
-        """ UDP doesn't connect so this just sets the instance variables """
-        self.rip = dest_ip
-        self.rport = dest_port
-
