@@ -26,6 +26,7 @@ def randomCallID():
 
 
 def randomTag():
+    """ TODO Implement RFC 3261 Section 19.3 Tags """
     return nowHex() + randStr(4)
 
 

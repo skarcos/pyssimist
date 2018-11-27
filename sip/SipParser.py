@@ -93,3 +93,5 @@ m=video 6008 RTP/AVP 40
 a=rtpmap:40 H263-1998/90000
 '''
     j = buildMessage(i, {})
+    s.make_response_to(j)
+    print(s.contents())

@@ -5,7 +5,7 @@ Initial Version: Costas Skarakis 11/11/2018
 
 import re
 import hashlib
-import time
+from common import util
 
 
 class SipMessage(object):
@@ -18,6 +18,7 @@ class SipMessage(object):
         self.headers = self.header
         self.status = None
         self.method = None
+        self.type = None
         self.status_line = ""
         self.request_line = ""
         self.body = body
@@ -25,6 +26,18 @@ class SipMessage(object):
             self.header["Content-Length"] = str(len(body.strip()) + 2)
         else:
             self.header["Content-Length"] = "0"
+        self.to_tag = ""
+        self.from_tag = ""
+        self.via_branch = ""
+        M = re.search(r"tag=([^;]+)",self.header["To"])
+        if M:
+            self.to_tag = M.group(1)
+        M = re.search(r"tag=([^;]+)",self.header["From"])
+        if M:
+            self.from_tag = M.group(1)
+        M = re.search(r"branch=([^;]+)",self.header["Via"])
+        if M:
+            self.via_branch = M.group(1)
 
     def __getitem__(self, key):
         return self.header[key]
@@ -33,6 +46,24 @@ class SipMessage(object):
         self.header[key] = value
 
     def __repr__(self):
+        if self.from_tag:
+            if "tag" in self.header["From"]:
+                self.header["From"] = re.sub("tag=[^;]+", "tag=%s", self.header["From"]) % self.from_tag
+            else:
+                self.header["From"] = self.header["From"]+";tag="+self.from_tag
+
+        if self.to_tag:
+            if "tag" in self.header["To"]:
+                self.header["To"] = re.sub("tag=[^;]+", "tag=%s", self.header["To"]) % self.to_tag
+            else:
+                self.header["To"] = self.header["To"] + ";tag=" + self.to_tag
+
+        if self.via_branch:
+            if "branch" in self.header["Via"]:
+                self.header["Via"] = re.sub("branch=[^;]+", "branch=%s", self.header["Via"]) % self.via_branch
+            else:
+                self.header["Via"] = self.header["Via"] + ";branch=" + self.via_branch
+
         if self.type == "Request":
             first_line = self.request_line
         else:
@@ -42,6 +73,23 @@ class SipMessage(object):
         result += "\r\n"
         result += "\r\n" + self.body
         return result
+
+    def set_dialog_from(self, other):
+        self.from_tag = other.from_tag
+        self.to_tag = other.to_tag
+        self.header["Call-ID"] = other["Call-ID"]
+
+    def make_response_to(self, other):
+        """ RFC 3261 Section 8.2.6.2 Headers and Tags"""
+        self.set_dialog_from(other)
+        self.via_branch = other.via_branch
+        self["From"] = other["From"]
+        self["Call-ID"] = other["Call-ID"]
+        self["Via"] = other["Via"]
+        if other.to_tag:
+            self["To"] = other["To"]
+        else:
+            self.to_tag = util.randomTag()
 
     def __str__(self):
         return repr(self)
