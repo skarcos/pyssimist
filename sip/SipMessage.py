@@ -74,22 +74,47 @@ class SipMessage(object):
         result += "\r\n" + self.body
         return result
 
-    def set_dialog_from(self, other):
-        self.from_tag = other.from_tag
-        self.to_tag = other.to_tag
-        self.header["Call-ID"] = other["Call-ID"]
+    def get_dialog(self):
+        return {"Call-ID": self["Call-ID"],
+                "to_tag": self.to_tag,
+                "from_tag": self.from_tag}
 
-    def make_response_to(self, other):
-        """ RFC 3261 Section 8.2.6.2 Headers and Tags"""
+    def set_dialog_from(self, other):
+        """
+        Set current dialog elements from another sip message
+        :SipMessage other: The message to get the dialog elements from
+        """
+        if type(other) == type(self):
+            self.from_tag = other.from_tag
+            self.to_tag = other.to_tag
+            self.header["Call-ID"] = other["Call-ID"]
+        elif type(other) == type(dict()):
+            self.from_tag = other["from_tag"]
+            self.to_tag = other["to_tag"]
+            self.header["Call-ID"] = other["Call-ID"]
+        else:
+            raise Exception("Cannot set SipMessage dialog from %s" % type(other))
+
+    def make_response_to(self, other, dialog={}):
+        """ RFC 3261 Section 8.2.6.2 Headers and Tags
+        :dict dialog: The current sip dialog we are in, represented by
+            a dictionary with keys as in the return type of self.get_dialog()
+        """
         self.set_dialog_from(other)
         self.via_branch = other.via_branch
         self["From"] = other["From"]
         self["Call-ID"] = other["Call-ID"]
         self["Via"] = other["Via"]
-        if other.to_tag:
-            self["To"] = other["To"]
-        else:
-            self.to_tag = util.randomTag()
+        self["To"] = other["To"]
+        if not other.to_tag:
+            # This is useful when we make a response to an initial invite.
+            # The invite has no to tag. But we made one for Trying
+            # and now we must use it for Ringing as well.
+            if dialog["to_tag"]:
+                self.to_tag = dialog["to_tag"]
+            else:
+                self.to_tag = util.randomTag()
+        return self.get_dialog()
 
     def __str__(self):
         return repr(self)
