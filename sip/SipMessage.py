@@ -79,19 +79,28 @@ class SipMessage(object):
                 "to_tag": self.to_tag,
                 "from_tag": self.from_tag}
 
+    def get_dialog_string(self):
+        """
+
+        :return: Dialog string in CallID:FromTag:ToTag format
+        """
+        return "%s:%s:%s" % (self["Call-ID"], self.from_tag, self.to_tag)
+
     def set_dialog_from(self, other):
         """
-        Set current dialog elements from another sip message
-        :SipMessage other: The message to get the dialog elements from
+        Set current dialog elements from another sip message, or dialog string, or dialog dict
+        :SipMessage other: The message/dict/string to get the dialog elements from
         """
         if type(other) == type(self):
             self.from_tag = other.from_tag
             self.to_tag = other.to_tag
             self.header["Call-ID"] = other["Call-ID"]
-        elif type(other) == type(dict()):
+        elif isinstance(other, dict):
             self.from_tag = other["from_tag"]
             self.to_tag = other["to_tag"]
             self.header["Call-ID"] = other["Call-ID"]
+        elif isinstance(other, str):
+            self.header["Call-ID"], self.from_tag, self.to_tag = other.split(":")
         else:
             raise Exception("Cannot set SipMessage dialog from %s" % type(other))
 
