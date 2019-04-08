@@ -44,6 +44,23 @@ class SipEndpoint(object):
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
 
+    def use_link(self, link):
+        """ Convenience function to use an existing network connection"""
+        protocol = ["TCP", "UDP"][link.socket.proto]
+        local_ip = link.ip
+        local_port = link.port
+        dest_ip = link.rip
+        dest_port = link.rport
+        self.link = link
+        self.ip = local_ip
+        self.port = local_port
+        self.parameters["source_ip"] = local_ip
+        self.parameters["source_port"] = local_port
+        self.parameters["dest_ip"] = dest_ip
+        self.parameters["dest_port"] = dest_port
+        self.parameters["transport"] = protocol
+        
+        
     def start_new_dialog(self):
         """ Refresh the SIP dialog specific parameters """
         self.parameters.update({
