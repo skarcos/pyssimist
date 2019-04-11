@@ -10,6 +10,62 @@ Max-Forwards: 70
 Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
 
 ''',
+		"200_OK_Notify":'''
+SIP/2.0 200 OK
+Contact: Will be overwritten by incoming NOTIFY
+Call-ID: Will be overwritten by incoming NOTIFY
+CSeq: Will be overwritten by incoming NOTIFY
+From: Will be overwritten by incoming NOTIFY
+To: Will be overwritten by incoming NOTIFY
+Via: Will be overwritten by incoming NOTIFY
+Content-Type: application/sdp
+Content-Length: 0
+''',
+        "Subscribe_secondary":'''\
+SUBSCRIBE sip:{user}@{dest_ip}:{dest_port};transport={transport} SIP/2.0
+Call-ID: {callId}
+CSeq: 1 SUBSCRIBE
+To: <sip:{user}@{dest_ip}:{dest_port}>
+From: "{primary}" <sip:{user}@{dest_ip}:{dest_port}>;tag=snl_{fromTag}
+User-Agent: optiPoint 420 Advance/V7 V7 R0.16.1/10.2.31.5
+Content-Length: 0
+Max-Forwards: 70
+Via: SIP/2.0/{transport} {source_ip}:{primary_port};branch={viaBranch}
+Accept: application/keyset-info+xml
+Allow: NOTIFY
+Expires: {expires}
+Event: keyset-info
+Contact: "{primary}" <sip:{user}@{source_ip}:{primary_port};transport={transport}>
+''',
+         "Register_secondary":'''\
+REGISTER sip:{dest_ip}:{dest_port};transport={transport} SIP/2.0
+Call-ID: {callId}
+CSeq: 1 REGISTER
+To: <sip:{user}@{dest_ip}:{dest_port}>
+From: "{user}" <sip:{user}@{dest_ip}:{dest_port}>;tag=snl_{fromTag}
+User-Agent: optiPoint 420 Advance/V7 V7 R0.16.1/10.2.31.5
+Content-Length: 0
+Max-Forwards: 70
+Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
+Accept: application/dls-contact-me
+Supported: X-Siemens-Proxy-State
+Contact: "{user}" <sip:{user}@{source_ip}:{primary_port};transport={transport}>;expires={expires}
+''',
+         "Register_primary":'''\
+REGISTER sip:{dest_ip}:{dest_port};transport={transport} SIP/2.0
+Call-ID: {callId}
+CSeq: 1 REGISTER
+To: <sip:{user}@{dest_ip}:{dest_port}>
+From: "{user}" <sip:{user}@{dest_ip}:{dest_port}>;tag=snl_{fromTag};epid={epid}
+User-Agent: optiPoint 420 Advance/V7 V7 R0.16.1/10.2.31.5
+Content-Length: 0
+Max-Forwards: 70
+Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
+Accept: application/dls-contact-me
+Supported: X-Siemens-Proxy-State
+Contact: "{user}" <sip:{user}@{source_ip}:{source_port};transport={transport}>;expires={expires}
+''',
+
            "Register_1": '''\
 REGISTER sip:{dest_ip}:{dest_port};transport={transport} SIP/2.0
 Call-ID: {callId}
