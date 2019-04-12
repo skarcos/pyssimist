@@ -137,6 +137,7 @@ class SipEndpoint(object):
             self.last_received_message = inmessage
         assert message_type in inmessage.get_status_or_method(), \
             '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.get_status_or_method(), message_type)
+        return inmessage
 
     def set_digest_credentials(self, username, password, realm=""):
         """
