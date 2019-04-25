@@ -2,6 +2,7 @@
 Purpose: Simulate a SIP phone/line appearance/user
 Initial Version: Costas Skarakis
 """
+from common.tc_logging import exception
 from sip.SipParser import parseBytes, buildMessage
 import common.util as util
 import common.client as client
@@ -24,6 +25,13 @@ class SipEndpoint(object):
         self.parameters = {"user": directory_number}
         self.last_sent_message = None
         self.last_received_message = None
+        self.current_dialog = {
+                        "callId": None,
+                        "fromTag": None,
+                        "viaBranch": None,
+                        "epid": None,
+                        "cseq": None
+            }
 
     def connect(self, local_address, destination_address, protocol="tcp"):
         """ Connect to the SIP Server """
@@ -59,18 +67,34 @@ class SipEndpoint(object):
         self.parameters["dest_ip"] = dest_ip
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
-        
-        
+
+    def set_dialog(self, dialog):
+        """ Change current dialog to the one provided """
+        if not type(dialog) == type(dict):
+            exception("Must provide a dialog in the form of Python dictionary")
+        for key in self.current_dialog:
+            if key not in dialog:
+                exception("Not a valid dialog. Missing key: "+key)
+        for key in self.current_dialog:
+            self.current_dialog[key] = dialog[key]
+        if self.last_received_message:
+            sip_message_dialog = {"Call-ID": dialog["callid"],
+                                  "from_tag": dialog["fromTag"],
+                                  "to_tag": ""}
+            self.last_received_message.set_dialog_from(sip_message_dialog)
+            self.last_received_message.via_branch = dialog["viaBranch"]
+        self.parameters.update(self.current_dialog)
+
     def start_new_dialog(self):
         """ Refresh the SIP dialog specific parameters """
-        self.parameters.update({
+        self.current_dialog = {
                         "callId": util.randomCallID(),
                         "fromTag": util.randomTag(),
                         "viaBranch": util.randomBranch(),
                         "epid": lambda x=6: "SC" + util.randStr(x),
                         "cseq": 1
             }
-        )
+        self.parameters.update(self.current_dialog)
 
     def send_new(self, target_sip_ep=None, message_string="", expected_response=None, ignore_messages=[]):
         """ Start a new dialog and send a message """
@@ -97,15 +121,21 @@ class SipEndpoint(object):
                                                                             self.last_received_message.status,
                                                                             self.last_sent_message.method,
                                                                             self.last_received_message))
+        return self.current_dialog
 
-    def send(self, message_string="", expected_response=None, ignore_messages=[]):
+    def send(self, message_string="", expected_response=None, ignore_messages=[], dialog=None):
         """ Send a message within a dialog """
+        if dialog:
+            self.set_dialog(dialog)
         self.reply(message_string)
         if expected_response:
             self.waitForMessage(expected_response, ignore_messages)
+        return self.current_dialog
 
-    def reply(self, message_string):
+    def reply(self, message_string, dialog=None):
         """ Send a response to a previously received message """
+        if dialog:
+            self.set_dialog(dialog)
         if "callId" not in self.parameters or not self.parameters['callId']:
             raise Exception("Cannot reply when we are not in a dialog")
         m = buildMessage(message_string, self.parameters)
@@ -123,6 +153,7 @@ class SipEndpoint(object):
             self.parameters["cseq"] += 1
             m["CSeq"] = "{} {}".format(self.parameters["cseq"], m.method)
         self.link.send(m.contents())
+        return self.current_dialog
 
     def waitForMessage(self, message_type, ignore_messages=[]):
         """
