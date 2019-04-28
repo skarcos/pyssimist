@@ -40,7 +40,11 @@ class SipMessage(object):
             self.via_branch = M.group(1)
 
     def __getitem__(self, key):
-        return self.header[key]
+        for k in self.header:
+            # handle different letter case
+            if k.upper() == key.upper():
+                return self.header[k]
+        raise KeyError("%s not in message headers" % key)
 
     def __setitem__(self, key, value):
         self.header[key] = value
@@ -57,6 +61,9 @@ class SipMessage(object):
                 self.header["To"] = re.sub("tag=[^;]+", "tag=%s", self.header["To"]) % self.to_tag
             else:
                 self.header["To"] = self.header["To"] + ";tag=" + self.to_tag
+        else:
+            if "tag" in self.header["To"]:
+                self.header["To"] = self.header["To"].split(";tag=")[0]
 
         if self.via_branch:
             if "branch" in self.header["Via"]:
@@ -73,6 +80,13 @@ class SipMessage(object):
         result += "\r\n"
         result += "\r\n" + self.body
         return result
+
+    def get_transaction(self):
+        cseq, method = self.header["CSeq"].split()
+        return {"via_branch": self.via_branch,
+                "cseq": cseq,
+                "method": method
+                }
 
     def get_dialog(self):
         return {"Call-ID": self["Call-ID"],
@@ -104,6 +118,25 @@ class SipMessage(object):
         else:
             raise Exception("Cannot set SipMessage dialog from %s" % type(other))
 
+    def set_transaction_from(self, other):
+        """
+        Set current transaction elements from another sip message, or dialog string, or dialog dict
+        :SipMessage other: The message/dict/string to get the transaction elements from
+        """
+        if type(other) == type(self):
+            self.via_branch = other.via_branch
+            method = self.method if self.method else other.method
+            cseq = self.header["CSeq"].split()[0]
+            self.header["CSeq"] = " ".join([cseq, method])
+        elif isinstance(other, dict):
+            self.via_branch = other["via_branch"]
+            method = self.method if self.method else other["method"]
+            self.header["CSeq"] = " ".join([other["cseq"], method])
+        elif isinstance(other, str):
+            self.header["CSeq"], self.via_branch = other.split(":")
+        else:
+            raise Exception("Cannot set SipMessage transaction from %s" % type(other))
+
     def make_response_to(self, other, dialog={}):
         """ RFC 3261 Section 8.2.6.2 Headers and Tags
         :dict dialog: The current sip dialog we are in, represented by
@@ -119,7 +152,7 @@ class SipMessage(object):
             # This is useful when we make a response to an initial invite.
             # The invite has no to tag. But we made one for Trying
             # and now we must use it for Ringing as well.
-            if dialog["to_tag"]:
+            if "to_tag" in dialog and dialog["to_tag"]:
                 self.to_tag = dialog["to_tag"]
             else:
                 self.to_tag = util.randomTag()

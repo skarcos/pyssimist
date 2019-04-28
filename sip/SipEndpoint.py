@@ -7,6 +7,7 @@ from sip.SipParser import parseBytes, buildMessage
 import common.util as util
 import common.client as client
 import sip.SipFlows as flow
+from copy import copy
 
 
 class SipEndpoint(object):
@@ -22,16 +23,27 @@ class SipEndpoint(object):
         self.port = None
         self.link = None
         self.number = directory_number
-        self.parameters = {"user": directory_number}
-        self.last_sent_message = None
-        self.last_received_message = None
+        self.parameters = {"user": directory_number,
+                           "callId": None,
+                           "fromTag": None,
+                           "viaBranch": None,
+                           "epid": None,
+                           "cseq": None
+                           }
+        self.last_messages_per_dialog = []
+        self.dialogs = []
+        self.requests = []
         self.current_dialog = {
-                        "callId": None,
-                        "fromTag": None,
-                        "viaBranch": None,
-                        "epid": None,
-                        "cseq": None
-            }
+            "Call-ID": None,
+            "from_tag": None,
+            "to_tag": None
+            # "epid": None,
+        }
+
+        self.current_transaction = {"via_branch": None,
+                                    "cseq": "0",
+                                    "method": None
+                                    }
 
     def connect(self, local_address, destination_address, protocol="tcp"):
         """ Connect to the SIP Server """
@@ -51,6 +63,34 @@ class SipEndpoint(object):
         self.parameters["dest_ip"] = dest_ip
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
+
+    def update_to_tag(self, in_dialog):
+        """
+        Update the to_tag on an existing dialog that has no to_tag
+        :param in_dialog: the complete dialog
+        :return: None
+        """
+        for dialog in self.dialogs:
+            if dialog["Call-ID"] == in_dialog["Call-ID"] \
+                    and dialog["from_tag"] == in_dialog["from_tag"]\
+                    and not dialog["to_tag"]:
+                dialog["to_tag"] = in_dialog["to_tag"]
+
+    def get_complete_dialog(self, in_dialog):
+        """
+        Look for a complete existing dialog in case the provided one doesn't have a to tag
+        :param in_dialog: the possibly incomplete dialog
+        :return: in_dialog if it is complete or a corresponding complete one is not found,
+                otherwise an existing corresponding complete dialog
+        """
+        if in_dialog["to_tag"]:
+            return in_dialog
+        for dialog in self.dialogs:
+            if dialog["Call-ID"] == in_dialog["Call-ID"] \
+                    and dialog["from_tag"] == in_dialog["from_tag"]\
+                    and dialog["to_tag"]:
+                return dialog
+        return in_dialog
 
     def use_link(self, link):
         """ Convenience function to use an existing network connection"""
@@ -74,27 +114,72 @@ class SipEndpoint(object):
             exception("Must provide a dialog in the form of Python dictionary")
         for key in self.current_dialog:
             if key not in dialog:
-                exception("Not a valid dialog. Missing key: "+key)
-        for key in self.current_dialog:
-            self.current_dialog[key] = dialog[key]
-        if self.last_received_message:
-            sip_message_dialog = {"Call-ID": dialog["callid"],
-                                  "from_tag": dialog["fromTag"],
-                                  "to_tag": ""}
-            self.last_received_message.set_dialog_from(sip_message_dialog)
-            self.last_received_message.via_branch = dialog["viaBranch"]
-        self.parameters.update(self.current_dialog)
+                exception("Not a valid dialog. Missing key: " + key)
+        if dialog not in self.dialogs:
+            self.dialogs.append(dialog)
+        self.current_dialog = self.get_complete_dialog(dialog)
+        self.parameters["callId"] = self.current_dialog["Call-ID"]
+        self.parameters["fromTag"] = self.current_dialog["from_tag"]
+        self.parameters["toTag"] = self.current_dialog["to_tag"]
+
+    def set_transaction(self, transaction):
+        """ Change current transaction to the one provided """
+        if not type(transaction) == type(dict):
+            exception("Must provide a transaction in the form of Python dictionary")
+        for key in self.current_transaction:
+            if key not in transaction:
+                exception("Not a valid transaction. Missing key: " + key)
+        for key in self.current_transaction:
+            self.current_transaction[key] = transaction[key]
 
     def start_new_dialog(self):
         """ Refresh the SIP dialog specific parameters """
         self.current_dialog = {
-                        "callId": util.randomCallID(),
-                        "fromTag": util.randomTag(),
-                        "viaBranch": util.randomBranch(),
-                        "epid": lambda x=6: "SC" + util.randStr(x),
-                        "cseq": 1
-            }
-        self.parameters.update(self.current_dialog)
+            "Call-ID": util.randomCallID(),
+            "from_tag": util.randomTag(),
+            "to_tag": None
+            # "epid": lambda x=6: "SC" + util.randStr(x),
+        }
+        self.dialogs.append(self.current_dialog)
+
+    def get_last_message_in(self, dialog):
+        """ Get the last message sent or received in the provided dialog """
+        for message in self.last_messages_per_dialog:
+            if message.get_dialog() == dialog:
+                return message
+        raise Exception("No message found in dialog: " + str(dialog))
+
+    def save_message(self, message):
+        """ Search for previously received message in the same dialog.
+            If found, replace with given message, otherwise append message to message list """
+        for i in range(len(self.last_messages_per_dialog)):
+            if message.get_dialog() == self.last_messages_per_dialog[i].get_dialog():
+                self.last_messages_per_dialog[i] = message
+                return
+        self.last_messages_per_dialog.append(message)
+
+    def start_new_transaction(self, method):
+        """ Refresh the via branch and CSeq header """
+        if method in ("ACK", "CANCEL"):
+            # Not really a new transaction
+            # find transaction from last message in dialog
+            transaction = self.get_last_message_in(self.current_dialog).get_transaction()
+            cseq = transaction["cseq"]
+            branch = transaction["via_branch"]
+        elif method in self.requests:
+            transaction = self.get_last_message_in(self.current_dialog).get_transaction()
+            cseq = str(int(transaction["cseq"]) + 1)
+            branch = transaction["via_branch"]
+        else:
+            cseq = str(len(self.requests))
+            branch = util.randomBranch()
+            if method != "REGISTER":
+                # Ignore REGISTER otherwise unregister breaks
+                # TODO: check if reRegistrations will work
+                self.requests.append(method)
+        self.current_transaction["via_branch"] = branch
+        self.current_transaction["cseq"] = cseq  # str(int(self.current_transaction["cseq"]) + 1)
+        self.current_transaction["method"] = method
 
     def send_new(self, target_sip_ep=None, message_string="", expected_response=None, ignore_messages=[]):
         """ Start a new dialog and send a message """
@@ -107,30 +192,38 @@ class SipEndpoint(object):
             self.parameters.pop("userA", None)
             self.parameters.pop("userB", None)
 
-        self.start_new_dialog()
-
         m = buildMessage(message_string, self.parameters)
+        assert m.type == "Request", 'Tried to start a new dialog with a SIP Response'
+
+        self.start_new_dialog()
+        self.start_new_transaction(m.method)  # m should always be a request
+
+        m.set_dialog_from(self.current_dialog)
+        m.set_transaction_from(self.current_transaction)
+
         self.link.send(m.contents())
-        self.last_sent_message = m
+        self.save_message(m)
 
         if expected_response:
             try:
                 self.waitForMessage(expected_response, ignore_messages)
             except AssertionError:
                 raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
-                                                                            self.last_received_message.status,
-                                                                            self.last_sent_message.method,
-                                                                            self.last_received_message))
-        return self.current_dialog
+                                                                            self.get_last_message_in(m.get_dialog()).status,
+                                                                            m.method,
+                                                                            m))
+        # We return a copy because this is a reference to an object and
+        # we want the current value at this point in time
+        return copy(self.current_dialog)
 
     def send(self, message_string="", expected_response=None, ignore_messages=[], dialog=None):
         """ Send a message within a dialog """
-        if dialog:
-            self.set_dialog(dialog)
-        self.reply(message_string)
+        self.reply(message_string, dialog)
         if expected_response:
             self.waitForMessage(expected_response, ignore_messages)
-        return self.current_dialog
+        # We return a copy because this is a reference to an object and
+        # we want the current value at this point in time
+        return copy(self.current_dialog)
 
     def reply(self, message_string, dialog=None):
         """ Send a response to a previously received message """
@@ -139,21 +232,22 @@ class SipEndpoint(object):
         if "callId" not in self.parameters or not self.parameters['callId']:
             raise Exception("Cannot reply when we are not in a dialog")
         m = buildMessage(message_string, self.parameters)
-        for h in ("To", "From", "Via", "Call-ID"):
-            m[h] = self.last_received_message[h]
-        # do we need to set the to tag for all responses? check rfc3261
-        if "tag=" not in m['To']:
-            m['To'] += ";tag=" + util.randStr(8)
-        if message_string.strip().startswith("SIP"):
-            # Sip response. Use received CSeq
-            m["CSeq"] = self.last_received_message["CSeq"]
-        else:
-            # This is not a response, but a new request in the same dialog, so fix the CSeq
-            # TODO: fix CSeq according to RFC3261 and ACK according to section 17.1.1.3
-            self.parameters["cseq"] += 1
-            m["CSeq"] = "{} {}".format(self.parameters["cseq"], m.method)
+        m.make_response_to(self.get_last_message_in(self.current_dialog))
+
+        if m.type == "Request":
+            # This is a new request in the same dialog, so fix the CSeq
+            # m.increase_cseq()
+            self.start_new_transaction(m.method)
+
+        m.set_transaction_from(self.current_transaction)
+
+        # TODO: fix CSeq according to RFC3261 and ACK according to section 17.1.1.3
+        #            self.parameters["cseq"] += 1
+        #            m["CSeq"] = "{} {}".format(self.parameters["cseq"], m.method)
         self.link.send(m.contents())
-        return self.current_dialog
+        # We return a copy because this is a reference to an object and
+        # we want the current value at this point in time
+        return copy(self.current_dialog)
 
     def waitForMessage(self, message_type, ignore_messages=[]):
         """
@@ -161,11 +255,17 @@ class SipEndpoint(object):
         :message_type is a string that we will make sure is
         contained in the received message request or response line
         """
-        inmessage=None
+        inmessage = None
+        last_sent_message = self.get_last_message_in(self.current_dialog)
         while not inmessage or inmessage.get_status_or_method() in ignore_messages:
             inbytes = self.link.waitForSipData()
-            inmessage = self.handleDA(self.last_sent_message, parseBytes(inbytes))
-            self.last_received_message = inmessage
+            inmessage = self.handleDA(last_sent_message, parseBytes(inbytes))
+            self.save_message(inmessage)
+            if inmessage.type == "Request":
+                self.set_transaction(inmessage.get_transaction())
+            else:
+                self.update_to_tag(inmessage.get_dialog())
+            self.set_dialog(inmessage.get_dialog())
         assert message_type in inmessage.get_status_or_method(), \
             '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.get_status_or_method(), message_type)
         return inmessage
@@ -189,7 +289,7 @@ class SipEndpoint(object):
         if "da_pass" not in self.parameters or "da_user" not in self.parameters:
             self.set_digest_credentials(self.number, self.number, "")
         user, pwd = self.parameters["da_user"], self.parameters["da_pass"]
-        if response.type=="Response" and response.status=="401 Unauthorized":
+        if response.type == "Response" and response.status == "401 Unauthorized":
             request.addAuthorization(response["WWW-Authenticate"], user, pwd)
             self.link.send(request.contents())
             inBytes = self.link.waitForSipData()
