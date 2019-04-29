@@ -79,14 +79,19 @@ class TCPClient(object):
         debug("Received on port {}:\n\n".format(self.port) + data.decode("utf8").replace("\r\n", "\n"))
         return data
 
-    def waitForCstaData(self):
-        header = self.socket.recv(4)
-        datalength = int(''.join(["%02X" % x for x in header]), base=16) - 4
-        data = b''
-        while len(data) < datalength:
-            data += self.socket.recv(datalength - len(data))
-        # print('message:\n{}\nsize{}\n'.format(data,datalength))
-        debug("Received on port {}:\n\n".format(self.port) + (header + data).decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+    def waitForCstaData(self, timeout=None):
+        bkp = self.socket.gettimeout()
+        if timeout: self.socket.settimeout(timeout)
+        try:
+            header = self.socket.recv(4)
+            datalength = int(''.join(["%02X" % x for x in header]), base=16) - 4
+            data = b''
+            while len(data) < datalength:
+                data += self.socket.recv(datalength - len(data))
+            # print('message:\n{}\nsize{}\n'.format(data,datalength))
+            debug("Received on port {}:\n\n".format(self.port) + (header + data).decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+        finally:
+            self.socket.settimeout(bkp)
         return header + data
 
 
