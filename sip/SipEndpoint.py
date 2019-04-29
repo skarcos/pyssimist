@@ -72,7 +72,7 @@ class SipEndpoint(object):
         """
         for dialog in self.dialogs:
             if dialog["Call-ID"] == in_dialog["Call-ID"] \
-                    and dialog["from_tag"] == in_dialog["from_tag"]\
+                    and dialog["from_tag"] == in_dialog["from_tag"] \
                     and not dialog["to_tag"]:
                 dialog["to_tag"] = in_dialog["to_tag"]
 
@@ -87,7 +87,7 @@ class SipEndpoint(object):
             return in_dialog
         for dialog in self.dialogs:
             if dialog["Call-ID"] == in_dialog["Call-ID"] \
-                    and dialog["from_tag"] == in_dialog["from_tag"]\
+                    and dialog["from_tag"] == in_dialog["from_tag"] \
                     and dialog["to_tag"]:
                 return dialog
         return in_dialog
@@ -110,7 +110,7 @@ class SipEndpoint(object):
 
     def set_dialog(self, dialog):
         """ Change current dialog to the one provided """
-        if not type(dialog) == type(dict):
+        if not isinstance(dialog, dict):
             exception("Must provide a dialog in the form of Python dictionary")
         for key in self.current_dialog:
             if key not in dialog:
@@ -124,7 +124,7 @@ class SipEndpoint(object):
 
     def set_transaction(self, transaction):
         """ Change current transaction to the one provided """
-        if not type(transaction) == type(dict):
+        if not isinstance(transaction, dict):
             exception("Must provide a transaction in the form of Python dictionary")
         for key in self.current_transaction:
             if key not in transaction:
@@ -209,7 +209,8 @@ class SipEndpoint(object):
                 self.waitForMessage(expected_response, ignore_messages)
             except AssertionError:
                 raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
-                                                                            self.get_last_message_in(m.get_dialog()).status,
+                                                                            self.get_last_message_in(
+                                                                                m.get_dialog()).status,
                                                                             m.method,
                                                                             m))
         # We return a copy because this is a reference to an object and
