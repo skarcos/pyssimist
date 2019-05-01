@@ -28,7 +28,10 @@ class CstaMessage(object):
         ET.register_namespace("", self.namespace)
 
     def __getitem__(self, key):
-        element = self.body.find("{" + self.namespace + "}" + key)
+        for tag in self.body.iter():
+            element = tag.find("{" + self.namespace + "}" + key)
+            if element is not None:
+                break
         return element.text
 
     def __setitem__(self, key, value):

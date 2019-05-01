@@ -9,11 +9,13 @@ from common import util
 from common.client import TCPClient
 from csta.CstaMessage import xmlpath
 from sip.SipEndpoint import SipEndpoint
-from csta.CstaParser import parseBytes as parseBytes_csta, buildMessageFromFile
+from csta.CstaParser import parseBytes as parseBytes_csta, buildMessageFromFile, buildMessage
 import sip.SipFlows as SipFlows
 
 
 def get_xml(name):
+    if not name.endswith(".xml"):
+        name += ".xml"
     return os.path.join(xmlpath, name)
 
 
@@ -26,8 +28,10 @@ class CstaEndpoint(SipEndpoint):
         super().__init__(directory_number)
         self.csta_links = []
         self.incoming_event_threads = []
-        self.event_id = 1
+        self.eventid = 1
         self.last_sent_csta_message = None
+        self.parameters["deviceID"] = None
+        self.parameters["callID"] = None
 
     def sip_connect(self, local_address, destination_address, protocol="tcp"):
         """ Wrap SipEndpoint.connect with a different name """
@@ -133,30 +137,55 @@ class CstaEndpoint(SipEndpoint):
         """ Wrapper for SipEndpoint.reply Send a response to a previously received message """
         return self.reply(message_string, dialog)
 
-    def send_csta(self, message_xml_file):
-        """ Send a CSTA request
-        :message_xml_file: The type of request. There should be a matching filename in csta/xml
+    def send_csta(self, message_xml_file, target=None):
+        """ Send a CSTA message
+
+        :message_xml_file: This could be a predefined csta message or just the type of the message.
+                           There are already several builtin xml files that are named after the corresponding messages
+                           In order to access them just provide the type of the CSTA message.
+                           There should be a matching filename in csta/xml
+
+                           Example: C.send_csta("MakeCall")
         """
-        m = buildMessageFromFile(get_xml(message_xml_file), self.parameters, self.event_id)
+        self.eventid += 1
+        if target and (isinstance(target, SipEndpoint) or isinstance(target, CstaEndpoint)):
+            self.parameters["callingDevice"] = self.parameters["userA"] = self.number
+            self.parameters["calledDirectoryNumber"] = self.parameters["userB"] = target.number
+        if message_xml_file.strip().startswith("<?xml"):
+            m = buildMessage(message_xml_file, self.parameters, self.eventid)
+        else:
+            m = buildMessageFromFile(get_xml(message_xml_file), self.parameters, self.eventid)
         self.last_sent_csta_message = m
         self.csta_links[0].send(m.contents())
-        self.event_id += 1
 
     def waitForCstaMessage(self, message_type, ignore_messages=()):
         inmessage = None
         while not inmessage or inmessage.event in ignore_messages:
-            in_bytes = self.csta_links[0].waitForData()
+            in_bytes = self.csta_links[0].waitForCstaData()
             inmessage = parseBytes_csta(in_bytes)
         assert inmessage.event == message_type, \
             '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.event, message_type)
-        assert inmessage.eventid == self.event_id, \
-            '{}: Wrong event id received: {}. \n' \
-            'Last message sent: \n{}' \
-            '\nMessage received:\n{}\n'.format(self.number,
-                                               inmessage.event,
-                                               self.last_sent_csta_message,
-                                               inmessage)
+        if inmessage.eventid != 9999:
+            assert inmessage.eventid == self.eventid, \
+                '{}: Wrong event id received: {} \n' \
+                'Event id expected: {}\n' \
+                'Last message sent: \n{}' \
+                '\nMessage received:\n{}\n'.format(self.number,
+                                                   inmessage.eventid,
+                                                   self.eventid,
+                                                   self.last_sent_csta_message,
+                                                   inmessage)
+            self.update_call_parameters(inmessage)
         return inmessage
+
+    def update_call_parameters(self, inresponse):
+        """ Update our deviceID based on the given incoming CSTA response """
+        try:
+            self.parameters["deviceID"] = inresponse["deviceID"]
+            self.parameters["callID"] = inresponse["callID"]
+        except AttributeError:
+            self.parameters["deviceID"] = None
+            self.parameters["callID"] = None
 
     def unregister(self):
         """ Unregister SIP and stop all incoming CSTA event threads """

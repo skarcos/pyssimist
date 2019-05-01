@@ -47,6 +47,11 @@ def parseBytes(bString):
     return cstamessage
 
 if __name__=="__main__":
-    import os
-    os.chdir(r'.\CstaPool')
-    s=buildMessageFromFile("SystemRegister.xml",{"deviceID":10101001100,"reason":"because"},9999)
+#    import os
+#    os.chdir(r'.\CstaPool')
+#    s=buildMessageFromFile("SystemRegister.xml",{"deviceID":10101001100,"reason":"because"},9999)
+    a = b'\x00\x00\x03\xeb9999<?xml version="1.0" encoding="UTF-8"?><ServiceInitiatedEvent xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><monitorCrossRefID>1169730059</monitorCrossRefID><initiatedConnection><callID>FF000100000000002D65C85C1C750000</callID><deviceID>302118840100</deviceID></initiatedConnection><initiatingDevice><deviceIdentifier>N&lt;302118840100&gt;;noa=nk</deviceIdentifier></initiatingDevice><localConnectionInfo>initiated</localConnectionInfo><cause>makeCall</cause><servicesPermitted><callControlServices><clearConnection>true</clearConnection></callControlServices><callAssociatedServices/><mediaAttachementServices/><routeingServices/><voiceServices/></servicesPermitted><mediaCallCharacteristics><mediaClass><voice>true</voice><image>false</image><im>false</im></mediaClass></mediaCallCharacteristics><extensions><privateData><private xmlns:scx="http://www.siemens.com/schema/csta"><scx:extendedServicesPermitted/></private></privateData></extensions></ServiceInitiatedEvent>'
+    b = b'\x00\x00\x04C9999<?xml version="1.0" encoding="UTF-8"?><OriginatedEvent xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><monitorCrossRefID>1169730059</monitorCrossRefID><originatedConnection><callID>FF000100000000002D65C85C1C750000</callID><deviceID>302118840100</deviceID></originatedConnection><callingDevice><deviceIdentifier>302118840100</deviceIdentifier></callingDevice><calledDevice><deviceIdentifier>N&lt;302118840101&gt;;displayNumber=302118840101;noa=nk</deviceIdentifier></calledDevice><localConnectionInfo>connected</localConnectionInfo><cause>newCall</cause><servicesPermitted><callControlServices><clearConnection>true</clearConnection></callControlServices><callAssociatedServices/><mediaAttachementServices/><routeingServices/><voiceServices/></servicesPermitted><mediaCallCharacteristics><mediaClass><voice>true</voice><image>false</image><im>false</im></mediaClass></mediaCallCharacteristics><extensions><privateData><private xmlns:scx="http://www.siemens.com/schema/csta"><scx:extendedServicesPermitted/></private></privateData></extensions></OriginatedEvent>'
+    c = b'\x00\x00\x04A0002<?xml version="1.0" encoding="UTF-8"?><MakeCallResponse xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><callingDevice><callID>FF000100000000007778C95C05030000</callID><deviceID>302118840100</deviceID></callingDevice></MakeCallResponse>'
+    m = parseBytes(c)
+    print(m["deviceID"])
