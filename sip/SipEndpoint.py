@@ -2,7 +2,9 @@
 Purpose: Simulate a SIP phone/line appearance/user
 Initial Version: Costas Skarakis
 """
-from common.tc_logging import exception
+from threading import Timer
+
+from common.tc_logging import exception, debug
 from sip.SipParser import parseBytes, buildMessage
 import common.util as util
 import common.client as client
@@ -44,6 +46,13 @@ class SipEndpoint(object):
                                     "cseq": "0",
                                     "method": None
                                     }
+
+        self.waitForMessage = self.wait_for_message # compatibility alias
+        self.secondary_lines = []
+        self.message_buffer = []
+        self.registered = False
+        self.re_register_timer=None
+        self.busy = False
 
     def connect(self, local_address, destination_address, protocol="tcp"):
         """ Connect to the SIP Server """
@@ -107,6 +116,7 @@ class SipEndpoint(object):
         self.parameters["dest_ip"] = dest_ip
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
+        #self.link.endpoints_connected += 1
 
     def set_dialog(self, dialog):
         """ Change current dialog to the one provided """
@@ -117,10 +127,13 @@ class SipEndpoint(object):
                 exception("Not a valid dialog. Missing key: " + key)
         if dialog not in self.dialogs:
             self.dialogs.append(dialog)
-        self.current_dialog = self.get_complete_dialog(dialog)
+            self.requests.append([])
+        dialog = self.get_complete_dialog(dialog)
+        self.current_dialog = dialog
         self.parameters["callId"] = self.current_dialog["Call-ID"]
         self.parameters["fromTag"] = self.current_dialog["from_tag"]
         self.parameters["toTag"] = self.current_dialog["to_tag"]
+        return dialog
 
     def set_transaction(self, transaction):
         """ Change current transaction to the one provided """
@@ -134,107 +147,147 @@ class SipEndpoint(object):
 
     def start_new_dialog(self):
         """ Refresh the SIP dialog specific parameters """
-        self.current_dialog = {
+        dialog = {
             "Call-ID": util.randomCallID(),
             "from_tag": util.randomTag(),
-            "to_tag": None
+            "to_tag": ""
             # "epid": lambda x=6: "SC" + util.randStr(x),
         }
-        self.dialogs.append(self.current_dialog)
+        self.current_dialog = dialog
+        self.dialogs.append(dialog)
+        self.requests.append([])
+        return dialog
 
     def get_last_message_in(self, dialog):
         """ Get the last message sent or received in the provided dialog """
+        # First check for complete dialogs
         for message in self.last_messages_per_dialog:
             if message.get_dialog() == dialog:
                 return message
-        raise Exception("No message found in dialog: " + str(dialog))
+        # Second check for incomplete dialogs
+        for message in self.last_messages_per_dialog:
+            d = message.get_dialog()
+            if d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]:
+                return message
+        raise Exception("No message found in dialog {}. Other dialogs active: ".format(dialog, self.dialogs))
 
     def save_message(self, message):
         """ Search for previously received message in the same dialog.
             If found, replace with given message, otherwise append message to message list """
+        if message.get_status_or_method() in ("ACK", "CANCEL"):
+            return
         for i in range(len(self.last_messages_per_dialog)):
             if message.get_dialog() == self.last_messages_per_dialog[i].get_dialog():
                 self.last_messages_per_dialog[i] = message
                 return
         self.last_messages_per_dialog.append(message)
 
-    def start_new_transaction(self, method):
+    def start_new_transaction(self, method, dialog=None):
         """ Refresh the via branch and CSeq header """
+        if not dialog:
+            dialog = self.current_dialog
         if method in ("ACK", "CANCEL"):
             # Not really a new transaction
             # find transaction from last message in dialog
-            transaction = self.get_last_message_in(self.current_dialog).get_transaction()
+            transaction = self.get_last_message_in(dialog).get_transaction()
             cseq = transaction["cseq"]
             branch = transaction["via_branch"]
-        elif method in self.requests:
-            transaction = self.get_last_message_in(self.current_dialog).get_transaction()
+        elif method in self.requests[self.dialogs.index(dialog)]:
+            transaction = self.get_last_message_in(dialog).get_transaction()
             cseq = str(int(transaction["cseq"]) + 1)
             branch = transaction["via_branch"]
         else:
-            cseq = str(len(self.requests))
+            cseq = str(len(self.requests[self.dialogs.index(dialog)]))
             branch = util.randomBranch()
             if method != "REGISTER":
                 # Ignore REGISTER otherwise unregister breaks
                 # TODO: check if reRegistrations will work
-                self.requests.append(method)
-        self.current_transaction["via_branch"] = branch
-        self.current_transaction["cseq"] = cseq  # str(int(self.current_transaction["cseq"]) + 1)
-        self.current_transaction["method"] = method
+                self.requests[self.dialogs.index(dialog)].append(method)
+        transaction = {}
+        transaction["via_branch"] = branch
+        transaction["cseq"] = cseq  # str(int(self.current_transaction["cseq"]) + 1)
+        transaction["method"] = method
+        self.current_transaction = transaction
+        return transaction
 
     def send_new(self, target_sip_ep=None, message_string="", expected_response=None, ignore_messages=[]):
         """ Start a new dialog and send a message """
         if target_sip_ep:
             self.parameters["userA"] = self.number
-            self.parameters["userB"] = target_sip_ep.number
+            if isinstance(target_sip_ep, SipEndpoint):
+                self.parameters["userB"] = target_sip_ep.number
+            elif isinstance(target_sip_ep, str):
+                self.parameters["userB"] = target_sip_ep
+            else:
+                raise Exception("target_sip_ep must be str or SipEndpoint, not {}".format(type(target_sip_ep)))
         else:
             # In cases like REGISTER, there is no B-side
             # Clear parameters to avoid unexpected results
-            self.parameters.pop("userA", None)
-            self.parameters.pop("userB", None)
+            # self.parameters.pop("userA", None)
+            # self.parameters.pop("userB", None)
+            pass
 
         m = buildMessage(message_string, self.parameters)
         assert m.type == "Request", 'Tried to start a new dialog with a SIP Response'
 
-        self.start_new_dialog()
-        self.start_new_transaction(m.method)  # m should always be a request
+        new_dialog = self.start_new_dialog()
+        new_transaction = self.start_new_transaction(m.method)  # m should always be a request
 
-        m.set_dialog_from(self.current_dialog)
-        m.set_transaction_from(self.current_transaction)
+        m.set_dialog_from(new_dialog)
+        m.set_transaction_from(new_transaction)
 
         self.link.send(m.contents())
         self.save_message(m)
 
         if expected_response:
-            try:
-                self.waitForMessage(expected_response, ignore_messages)
-            except AssertionError:
-                raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
-                                                                            self.get_last_message_in(
-                                                                                m.get_dialog()).status,
-                                                                            m.method,
-                                                                            m))
-        # We return a copy because this is a reference to an object and
-        # we want the current value at this point in time
-        return copy(self.current_dialog)
+            # try:
+                self.waitForMessage(message_type=expected_response, dialog=new_dialog, ignore_messages=ignore_messages)
+            # except AssertionError:
+            #     raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
+            #                                                                 self.get_last_message_in(
+            #                                                                     m.get_dialog()).get_status_or_method(),
+            #                                                                 m.method,
+            #                                                                 m))
+        return m
+
+    def send_in_ctx_of(self, reference_message, this_message_string="", expected_response=None, ignore_messages=[]):
+        """ Send a message within the same dialog and transaction as 'reference_message' """
+        self.set_transaction(reference_message.get_transaction())
+        return self.send(message_string=this_message_string,
+                         expected_response=expected_response,
+                         ignore_messages=ignore_messages,
+                         dialog=reference_message.get_dialog())
 
     def send(self, message_string="", expected_response=None, ignore_messages=[], dialog=None):
         """ Send a message within a dialog """
-        self.reply(message_string, dialog)
+        m = self.reply(message_string, dialog)
         if expected_response:
-            self.waitForMessage(expected_response, ignore_messages)
-        # We return a copy because this is a reference to an object and
-        # we want the current value at this point in time
-        return copy(self.current_dialog)
+            self.waitForMessage(message_type=expected_response, ignore_messages=ignore_messages, dialog=dialog)
+        return m
 
     def reply(self, message_string, dialog=None):
         """ Send a response to a previously received message """
         if dialog:
-            self.set_dialog(dialog)
+            dialog = self.set_dialog(dialog)
+        else:
+            dialog = self.current_dialog
+
         if "callId" not in self.parameters or not self.parameters['callId']:
             raise Exception("Cannot reply when we are not in a dialog")
-        m = buildMessage(message_string, self.parameters)
-        m.make_response_to(self.get_last_message_in(self.current_dialog))
 
+        m = buildMessage(message_string, self.parameters)
+
+        try:
+            previous_message = self.get_last_message_in(dialog)
+            m.make_response_to(previous_message)
+        except:
+            # New dialog, same call-id, eg NOTIFY after Keyset SUBSCRIBE.
+            # Must be a SIP Response
+            assert m.type == "Request", \
+                "Attempted to send a {} response in a new dialog".format(m.get_status_or_method())
+            m.set_dialog_from(dialog)
+
+        self.save_message(m)
         if m.type == "Request":
             # This is a new request in the same dialog, so fix the CSeq
             # m.increase_cseq()
@@ -246,30 +299,145 @@ class SipEndpoint(object):
         #            self.parameters["cseq"] += 1
         #            m["CSeq"] = "{} {}".format(self.parameters["cseq"], m.method)
         self.link.send(m.contents())
-        # We return a copy because this is a reference to an object and
-        # we want the current value at this point in time
-        return copy(self.current_dialog)
+        return m
 
-    def waitForMessage(self, message_type, ignore_messages=[]):
+    def get_buffered_message(self, dialog):
+        """
+        Return the first buffered message found in the given dialog
+
+        :param dialog: The dialog in question
+        :return: the buffered SipMessage
+        """
+        msg = None
+        #for message in self.message_buffer:
+        for i in range(len(self.message_buffer)):
+            message = self.message_buffer[i]
+            d = message.get_dialog()
+            if d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]:
+                msg = message
+                self.message_buffer.pop(i)
+                break
+        return msg
+
+    def wait_for_message(self, message_type, dialog=None, ignore_messages=[], timeout=5.0):
         """
         Wait for a specific type of SIP message.
-        :message_type is a string that we will make sure is
-        contained in the received message request or response line
+        :param message_type: is a string that we will make sure is
+                             contained in the received message request or response line
+                             Set this to None or "" to accept any incoming message
+
+                             if a list or tuple is given any of the contained message types
+                             will be accepted
+
+        :param dialog: Set the dialog to expect the message in. If None will expect a message in current dialog
+        :param ignore_messages: a list of message_types to ignore if they come before
+                                the expected message_type
+        :param timeout: Defined timeout in seconds.
+        :return: A SipMessage constructed from the incoming message
         """
+        if not dialog:
+            dialog = self.current_dialog
+        else:
+            dialog = self.get_complete_dialog(dialog)
+
         inmessage = None
-        last_sent_message = self.get_last_message_in(self.current_dialog)
-        while not inmessage or inmessage.get_status_or_method() in ignore_messages:
-            inbytes = self.link.waitForSipData()
-            inmessage = self.handleDA(last_sent_message, parseBytes(inbytes))
-            self.save_message(inmessage)
-            if inmessage.type == "Request":
-                self.set_transaction(inmessage.get_transaction())
-            else:
-                self.update_to_tag(inmessage.get_dialog())
-            self.set_dialog(inmessage.get_dialog())
-        assert message_type in inmessage.get_status_or_method(), \
-            '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.get_status_or_method(), message_type)
+        last_sent_message = self.get_last_message_in(dialog)
+        transaction = last_sent_message.get_transaction()
+        len_buffer = len(self.message_buffer)
+        count = 0
+
+        while not inmessage:
+
+            if count < len_buffer:
+                # first get a message from the buffer
+                inmessage = self.get_buffered_message(dialog)
+                count += 1
+
+            if not inmessage:
+                # no (more) buffered messages. try the network
+                inbytes = self.link.waitForSipData(timeout=timeout)
+                inmessage = self.handleDA(last_sent_message, parseBytes(inbytes))
+
+            inmessage_type = inmessage.get_status_or_method()
+            inmessage_dialog = inmessage.get_dialog()
+            inmessage.cseq_method = inmessage.get_transaction()["method"]
+
+            if inmessage_type in ignore_messages:
+                inmessage = None
+                continue
+
+            if message_type and \
+                    ((isinstance(message_type, str) and message_type not in inmessage_type) or
+                     (type(message_type) in (list, tuple) and not any([m in inmessage_type for m in message_type])) or
+                     (inmessage.type == "Response" and inmessage.cseq_method != transaction["method"])):
+                # we have received an unexpected message. buffer it if there is an active dialog for it
+                if inmessage_dialog in self.dialogs or inmessage_type == "INVITE":
+                    # message is part of another active dialog or a new call, so buffer it
+                    self.message_buffer.append(inmessage)
+                    debug("Appended {} with {} to buffer. Will keep waiting for {}".format(inmessage_type,
+                                                                                           inmessage_dialog,
+                                                                                           message_type))
+                    inmessage = None
+                else:
+                    d = ["sip:{}@".format(line.number) in inmessage["To"] for line in self.secondary_lines]
+                    if any(d):
+                        # message is meant for another line in this device
+                        self.secondary_lines[d.index(True)].message_buffer.append(inmessage)
+                        inmessage = None
+                    else:
+                        raise AssertionError('{}: Got "{}" in {} while expecting "{}" in {}. '
+                                             'Other active dialogs:{}.'.format(self.number,
+                                                                               inmessage_type,
+                                                                               inmessage_dialog,
+                                                                               message_type,
+                                                                               dialog,
+                                                                               self.dialogs))
+
+        self.save_message(inmessage)
+        if inmessage.type == "Request":
+            self.set_transaction(inmessage.get_transaction())
+        else:
+            assert inmessage.cseq_method == transaction["method"],\
+                "Got {} to {} instead of {} to {}".format(inmessage.get_status_or_method(),
+                                                          inmessage.cseq_method,
+                                                          message_type,
+                                                          transaction["method"])
+            self.update_to_tag(inmessage.get_dialog())
+        self.set_dialog(inmessage.get_dialog())
         return inmessage
+
+    def wait_for_messages(self, *list_of_message_types, in_order=False, ignore_messages=[]):
+        """
+        Wait for a list of messages. To be used in a loop or with the next() function.
+        Each invocation will return the next SipMessage received.
+        The loop will exit when all messages have been received
+
+        :param list_of_message_types: The list of messages expected eg ["NOTIFY", "SUBSCRIBE", "403 Forbidden"]
+        :param in_order: Impose the given order for incoming messages
+        :param ignore_messages:
+        :return: SipMessage received after each invocation
+        """
+        l = len(list_of_message_types)
+        not_received_messages = list(list_of_message_types)
+        received_messages = []
+        for i in range(l):
+            try:
+                sip_message = self.wait_for_message(None, ignore_messages)
+            except TimeoutError:
+                raise TimeoutError("Timeout waiting for {}. Messages already received: {}".format(not_received_messages,
+                                                                                                  received_messages))
+            message_received = sip_message.get_status_or_method()
+            assert message_received in not_received_messages, \
+                'After receiving {} we expected one of {} but got {}'.format(received_messages,
+                                                                             not_received_messages,
+                                                                             message_received)
+            if in_order:
+                message_order = list_of_message_types.index(message_received)
+                assert i == message_order, \
+                    '{} arrived in order {} instead of {}'.format(message_received, i, message_order)
+            not_received_messages.remove(message_received)
+            received_messages.append(message_received)
+            yield sip_message
 
     def set_digest_credentials(self, username, password, realm=""):
         """
@@ -298,10 +466,18 @@ class SipEndpoint(object):
         else:
             return response
 
-    def register(self, expiration_in_seconds=360):
+    def register(self, expiration_in_seconds=360, re_register_time=180):
         """ Convenience function to register a SipEndpoint """
+        if re_register_time:
+            self.re_register_timer = Timer(re_register_time, self.register, (expiration_in_seconds, re_register_time))
+            self.re_register_timer.start()
         flow.register(self, expiration_in_seconds)
+        self.registered = True
 
     def unregister(self):
-        """ Contenience function to un-register a SipEndpoint"""
+        """ Convenience function to un-register a SipEndpoint"""
+        if self.re_register_timer:
+            self.re_register_timer.cancel()
         flow.unregister(self)
+        self.registered = False
+
