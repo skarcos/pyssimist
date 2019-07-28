@@ -188,5 +188,40 @@ CSeq: Will be overwritten by incoming BYE
 From: Will be overwritten by incoming BYE
 To: Will be overwritten by incoming BYE
 Via: Will be overwritten by incoming BYE
+''',
+           "Notify_terminated_1": '''\
+NOTIFY sip:{user}@{dest_ip}:{dest_port};transport={transport} SIP/2.0
+Via: SIP/2.0/{transport} {source_ip};branch={viaBranch}
+Max-Forwards: 70
+From: {user} <sip:{user}@{source_ip}:{source_port};transport={transport}>
+To: <sip:{user}@{dest_ip}:{dest_port};transport={transport}>
+Call-ID: {callId}
+CSeq: 465101717 NOTIFY
+Contact: <sip:{user}@{source_ip}:{source_port};transport={transport}>
+Event: keyset-info
+Subscription-State: active;expires={expires}
+User-Agent: OpenStage_60_V3 R1.41.0      SIP  130205
+Content-Type: application/keyset-info+xml
+Content-Length: 316
+
+<?xml version="1.0"?>
+<keyset-info xmlns="urn:ietf:params:xml:ns:keyset-info"
+	version="0"
+	entity="sip:{user}@{dest_ip}:{dest_port}">
+	<ki-data> <ki-state>"unconfirmed"</ki-state> <ki-event>"unknown"</ki-event>  </ki-data>
+	<di:dialog id="no-dialog"> 
+		<di:state>terminated</di:state>
+	</di:dialog>
+</keyset-info>
+''',
+           "487_Request_Terminated": '''\
+SIP/2.0 487 Request Terminated
+Via: SIP/2.0/{transport} {dest_ip}:5060;branch={viaBranch}
+From: <sip:{user}@{dest_ip}>;tag={fromTag}
+To: {user} <sip:{user}@{source_ip}:{source_port}>
+Call-ID: {callId}
+CSeq: 1235 INVITE
+Server: optiPoint 420 Standard/V7 V7 R2.1.0
+Content-Length: 0
 '''
            }
