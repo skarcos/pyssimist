@@ -5,6 +5,7 @@ Initial Version: Costas Skarakis 11/11/2018
 import random
 import string
 from concurrent.futures import ThreadPoolExecutor
+from itertools import cycle
 from threading import Timer, Thread
 from time import time
 import re
@@ -52,6 +53,24 @@ def loop(sequence):
     while True:
         for i in sequence:
             yield i
+
+
+def pool(sequence, condition=bool):
+    """
+    Cyclically yields the next member of a sequence unless the specified condition is False
+
+    :param sequence: input sequence, eg a list
+    :param condition: a function to be run on the next member eg:
+            lambda x: x.registered
+    :return: yields the next eligible member
+    """
+    p = cycle(sequence)
+    while True:
+        c = next(p)
+        if condition(c):
+            yield c
+        else:
+            continue
 
 
 def serverThread(target, *args, **kwargs):
