@@ -61,37 +61,22 @@ if __name__ == "__main__":
     n = b'SIP/2.0 400 Bad Request\r\nWarning: 399 10.2.0.22 "Request mandatory header is missing or incorrect. Mandatory Header CSEQ-Method mismatch."\r\nVia: SIP/2.0/TCP 10.2.31.5:5080;branch=5bc619b78AKFDlh5mRGL\r\nFrom: "3021005533" <sip:3021005533@10.2.0.22:5060>;tag=snl_5bc619b7OD;epid=SCD0n\r\nCSeq: 1 OPTIONS\r\nCall-ID: 5bc619b7TTYmPW\r\nTo: <sip:10.2.0.22:5060>;tag=snl_PT47YjDdJE\r\nContent-Length: 0\r\n\r\n'
     s = parseBytes(n)
     i = '''
-INVITE sip:302108100501@10.2.31.5:4745;transport=tcp SIP/2.0
-To: <sip:302108100501@10.2.31.5>
-From: "Line00001" <sip:00001@10.2.0.22>;tag=snl_sWw2Lh4Inl
-Call-ID: SEC11-600020a-700020a-1-23K8za03bXNI
-CSeq: 1235 INVITE
-Contact: <sip:00001@10.2.0.22:5060;transport=tcp;maddr=10.2.0.22>
-Via: SIP/2.0/TCP 10.2.0.22:5060;branch=z9hG4bKSEC-600020a-700020a-1-e9B4b9825u
-Accept-Language: en;q=0.0
-Alert-Info: <Bellcore-dr1>
-Allow: REGISTER, INVITE, ACK, BYE, CANCEL, NOTIFY, REFER, INFO
-P-Asserted-Identity: "Line00001" <sip:00001@10.2.0.22>
-Session-Expires: 1800;refresher=uac
-Min-SE: 1800
-Supported: timer
-Date: Tue, 16 Oct 2018 19:01:31 GMT
-Max-Forwards: 69
-Content-Type: application/sdp
-Content-Length: 0
-
-v=0
-o=Anomymous 302108100001 1234567890 IN IP4 10.2.31.5
-s=SIGMA is the best
-c=IN IP4 10.2.31.5
-t=0 0
-m=audio 6006 RTP/AVP 8 0 3
-a=rtpmap:8 PCMA/8000
-a=rtpmap:0 PCMU/8000
-a=rtpmap:3 GSM/8000
-m=video 6008 RTP/AVP 40
-a=rtpmap:40 H263-1998/90000
+   REGISTER sip:10.0.0.1:5060;transport=UDP SIP/2.0
+   CSeq: 0 REGISTER
+   Call-ID: 1253634160-1253634161-7867113566_SubA-1253634162
+   From: 7867113566 <sip:7867113566@10.0.0.1>;epid=7867113566_SubA;tag=359368062
+   To: 7867113566 <sip:7867113566@10.0.0.1>
+   User-Agent: 
+   Expires: 300
+   Contact: <sip: 7867113566@10.0.0.2:3566;lr;transport=UDP>
+   Via: SIP/2.0/UDP 10.0.0.2:3566;branch=z9hG4bK359368062.17428.1
+   Via: SIP/2.0/UDP 10.0.0.2:3566;branch=z9hG4bK_STANDARD_reboot_with_Authen_Proxy_3-109_1253634158-1
+   Route: <sip:7867113566@10.0.0.2:5060;lr;transport=UDP>
+   Path: <sip:10.0.0.2:5060;transport=UDP;lr>
+   Max-Forwards: 70
+   Content-Length: 0
 '''
     j = buildMessage(i, {})
     s.make_response_to(j)
     print(s.contents())
+    print(j.contents())

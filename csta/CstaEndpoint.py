@@ -157,15 +157,23 @@ class CstaEndpoint(SipEndpoint):
             m = buildMessageFromFile(get_xml(message_xml_file), self.parameters, self.eventid)
         self.last_sent_csta_message = m
         self.csta_links[0].send(m.contents())
+        return m
 
-    def waitForCstaMessage(self, message_type, ignore_messages=()):
+    def waitForCstaMessage(self, message_type, ignore_messages=(), new_dialog=False):
+        """
+        Wait for CSTA message
+        :param message_type: The message to wait for
+        :param ignore_messages: Messages to ignore
+        :param new_dialog: If False, the incoming session ID must be the same as the one of the message we last sent (same dialog)
+        :return: the CstaMessage received
+        """
         inmessage = None
         while not inmessage or inmessage.event in ignore_messages:
             in_bytes = self.csta_links[0].waitForCstaData()
             inmessage = parseBytes_csta(in_bytes)
         assert inmessage.event == message_type, \
             '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.event, message_type)
-        if inmessage.eventid != 9999:
+        if inmessage.eventid != 9999 and not new_dialog:
             assert inmessage.eventid == self.eventid, \
                 '{}: Wrong event id received: {} \n' \
                 'Event id expected: {}\n' \
