@@ -197,7 +197,7 @@ class CstaEndpoint(SipEndpoint):
 
     def unregister(self):
         """ Unregister SIP and stop all incoming CSTA event threads """
-        SipFlows.unregister(self)
+        super().unregister()
         for csta_link in self.csta_links:
             csta_link.socket.close()
         self.csta_links = []
