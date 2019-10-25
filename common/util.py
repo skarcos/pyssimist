@@ -320,7 +320,9 @@ class Load(object):
 class LoadThread(Thread):
     """ I had to make a custom thread class to handle exceptions """
     def run(self):
+        self.exc = False
         try:
             super().run()
         except:
             logger.exception("Exception in Thread")
+            self.exc = True
