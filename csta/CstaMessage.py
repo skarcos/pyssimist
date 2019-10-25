@@ -15,21 +15,28 @@ class CstaMessage(object):
     """
 
     def __init__(self, header, xml_tree, encoding="UTF-8",
-                 namespace="http://www.ecma-international.org/standards/ecma-323/csta/ed4"):
+                 ns=(("", "http://www.ecma-international.org/standards/ecma-323/csta/ed4"),)):
         # s_ip,s_port,d_ip,d_port
         self.eventid = int(header[-4:])
         self.size = header[:4]
         self.header = header
         self.encoding = encoding
         self.body = xml_tree
-        self.namespace = namespace
+        self.namespace = ""
         self.root = self.body.getroot()
+        for namespace in ns:
+            # namespace is pair of (name, url)
+            ET.register_namespace(*namespace)
+            if namespace[0] == "":
+                # default namespace
+                self.namespace = namespace[1]
         self.event = self.root.tag.replace("{" + self.namespace + "}", '')
-        ET.register_namespace("", self.namespace)
 
     def __getitem__(self, key):
         for tag in self.body.iter():
-            element = tag.find("{" + self.namespace + "}" + key)
+            element = tag.find(key)
+            if element is None:
+                element = tag.find("{" + self.namespace + "}" + key)
             if element is not None:
                 break
         return element.text
