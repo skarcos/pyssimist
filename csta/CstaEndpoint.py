@@ -37,15 +37,23 @@ class CstaEndpoint(SipEndpoint):
         """ Wrap SipEndpoint.connect with a different name """
         return self.connect(local_address, destination_address, protocol)
 
-    def csta_connect(self, destination_address):
+    def csta_connect(self, local_address, destination_address, protocol="tcp"):
         """ Connect to CSTA Server """
         if not "source_ip" in self.parameters:
-            raise Exception("Must connect SIP first")
-        local_ip = self.parameters["source_ip"]
+            #raise Exception("Must connect SIP first")
+            local_ip, local_port = local_address
+            self.ip = local_ip
+            self.port = local_port
+            self.parameters["source_ip"] = local_ip
+            self.parameters["source_port"] = local_port
+            self.parameters["transport"] = protocol
+        else:
+            local_ip = self.parameters["source_ip"]
+            local_port = 0
         dest_ip, dest_port = destination_address
         # Only TCP implemented
         # 0 means bind to any available local port
-        csta_link = TCPClient(local_ip, 0)
+        csta_link = TCPClient(local_ip, local_port)
         self.csta_links.append(csta_link)
         csta_link.connect(dest_ip, dest_port)
 
