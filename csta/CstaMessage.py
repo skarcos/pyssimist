@@ -14,13 +14,14 @@ class CstaMessage(object):
     Representation of a CSTA message
     """
 
-    def __init__(self, header, xml_tree, encoding="UTF-8",
+    def __init__(self, header, xml_tree, str_body=None, encoding="UTF-8",
                  ns=(("", "http://www.ecma-international.org/standards/ecma-323/csta/ed4"),)):
         # s_ip,s_port,d_ip,d_port
         self.eventid = int(header[-4:])
         self.size = header[:4]
         self.header = header
         self.encoding = encoding
+        self.str_body = str_body
         self.body = xml_tree
         self.namespace = ""
         self.root = self.body.getroot()
@@ -54,10 +55,13 @@ class CstaMessage(object):
         return result.getvalue().decode(encoding=self.encoding)
 
     def __str__(self):
-        return repr(self)
+        if self.str_body:
+            return self.str_body
+        else:
+            return repr(self)
 
     def message(self):
-        return repr(self)
+        return str(self)
 
     def contents(self):
         """ returns byte string """

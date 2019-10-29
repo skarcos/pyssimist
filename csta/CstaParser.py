@@ -46,14 +46,13 @@ def parseBytes(bString):
     ns = [e[1] for e in XMLParser.read_events()]
     if ns:
         # namespace=ns.group(1)
-        cstamessage = CstaMessage(header, tree, encoding, ns)
+        cstamessage = CstaMessage(header, tree, body, encoding=encoding, ns=ns)
     else:
         # print("Warning: No namespace defined in message",root.tag)
-        cstamessage = CstaMessage(header, tree, encoding)
+        cstamessage = CstaMessage(header, tree, body, encoding=encoding)
     return cstamessage
 
 
-    c = b'\x00\x00\x04A0002<?xml version="1.0" encoding="UTF-8"?><MakeCallResponse xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><callingDevice><callID>FF000100000000007778C95C05030000</callID><deviceID>302118840100</deviceID></callingDevice></MakeCallResponse>'
 if __name__ == "__main__":
     #    import os
     #    os.chdir(r'.\CstaPool')
