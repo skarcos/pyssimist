@@ -2,7 +2,7 @@
 Purpose: Network connection facilities
 Initial Version: Costas Skarakis 11/11/2018
 """
-import socket
+import socket, ssl
 from common.tc_logging import debug
 
 
@@ -104,3 +104,30 @@ class UDPClient(TCPClient):
         self.socket.bind((self.ip, self.port))
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
+
+
+class TLSClient(TCPClient):
+    def __init__(self, ip, port, certificate=None, subject_name="localhost"):
+        self.ip = ip
+        self.port = port
+        self.rip, self.rport = None, None
+        self.server_name = subject_name
+        # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
+        self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        if not certificate:
+            self.context.check_hostname = False
+            self.context.verify_mode = ssl.CERT_NONE
+            ssl.create_default_context()
+        else:
+            # certificate example: 'path/to/my_certificate.pem'
+            self.context.load_verify_locations(certificate)
+
+
+    def connect(self, dest_ip, dest_port):
+        tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = self.context.wrap_socket(tcp_socket, server_hostname=self.server_name)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind((self.ip, self.port))
+        self.socket.settimeout(5.0)
+        self.sockfile = self.socket.makefile(mode='rb')
+        super().connect(dest_ip, dest_port)

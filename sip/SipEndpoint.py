@@ -54,17 +54,10 @@ class SipEndpoint(object):
         self.re_register_timer=None
         self.busy = False
 
-    def connect(self, local_address, destination_address, protocol="tcp"):
+    def connect(self, local_address, destination_address, protocol="tcp", certificate=None, subject_name="localhost"):
         """ Connect to the SIP Server """
         local_ip, local_port = local_address
         dest_ip, dest_port = destination_address
-        if protocol in ("tcp", "TCP"):
-            self.link = client.TCPClient(local_ip, local_port)
-        elif protocol in ("udp", "UDP"):
-            self.link = client.UDPClient(local_ip, local_port)
-        else:
-            raise NotImplementedError("{} client not implemented".format(protocol))
-        self.link.connect(dest_ip, dest_port)
         self.ip = local_ip
         self.port = local_port
         self.parameters["source_ip"] = local_ip
@@ -72,6 +65,17 @@ class SipEndpoint(object):
         self.parameters["dest_ip"] = dest_ip
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
+        if protocol in ("tcp", "TCP"):
+            self.link = client.TCPClient(local_ip, local_port)
+        elif protocol in ("udp", "UDP"):
+            self.link = client.UDPClient(local_ip, local_port)
+        elif protocol in ("tls", "TLS"):
+            # for MTLS this might be needed
+            # context.load_cert_chain('/path/to/certchain.pem', '/path/to/private.key')
+            self.link = client.TLSClient(local_ip, local_port, certificate)
+        else:
+            raise NotImplementedError("{} client not implemented".format(protocol))
+        self.link.connect(dest_ip, dest_port)
 
     def update_to_tag(self, in_dialog):
         """
