@@ -1,8 +1,10 @@
 import sys
+import traceback
 from copy import copy
 from threading import Timer
 
-sys.path.append("..")
+from os import path
+sys.path.append(path.join("..", ".."))
 
 from common.tc_logging import debug
 from sip.SipParser import parseBytes
@@ -95,20 +97,12 @@ def add_keyset_line(primary, line_dn):
     line.use_link(primary.link)
     register_secondary(primary, line)
     primary.secondary_lines.append(line)
+    # Very ugly way to check if line is busy: TODO
+    line.busy = False
     return line
 
 
-def handle_notify(sip_ep):
-    """ Handle NOTIFY messages and restore previous dialog """
-    current_dialog = copy(sip_ep.current_dialog)
-    current_transaction = copy(sip_ep.current_transaction)
-    sip_ep.waitForMessage("NOTIFY")
-    sip_ep.reply(message_string=message["200_OK_1"])
-    sip_ep.set_dialog(current_dialog)
-    sip_ep.set_transaction(current_transaction)
-
-
-def setup(A, B, secondaryNumbers, user_address_pool, call_taker_address_pool):
+def connect(A, B, user_address_pool, call_taker_address_pool):
     A.connect(next(user_address_pool),
               (params1["orig_osv_sipsm_ip"],
                params1["orig_osv_sipsm_port"]),
@@ -123,77 +117,101 @@ def setup(A, B, secondaryNumbers, user_address_pool, call_taker_address_pool):
     # Semi-Ugly way to handle OPTIONS messages from OSV when we don't shut down correctly :TODO
     B.link.register_for_event(("OPTIONS", {}, message["200_OK_1"]))
 
-    A.register()
-    register_primary(B)
 
-
-    for n in secondaryNumbers:
-        print("Adding", n, "to", B.number)
-        add_keyset_line(B, n)
-        sleep(0.5)
-
-    # Will handle Notify messages that
-    # B.link.register_for_event(("NOTIFY", {}, message["200_OK_1"]))
-
+def register(callers, call_takers, secondary_numbers, expiration=360):
     # Reregister timer
-    Timer(300.0, setup, args=[A, B, secondaryNumbers, user_address_pool, call_taker_address_pool]).start()
+    Timer(300, register, (callers, call_takers, secondary_numbers)).start()
+
+    for A in callers:
+        A.register(expiration_in_seconds=expiration)
+        sleep(0.1)
+
+    for B in call_takers:
+        register_primary(B, expiration_in_seconds=expiration)
+        sleep(0.1)
+        for n in secondary_numbers:
+            print("Adding", n, "to", B.number)
+            sleep(0.5)
+            add_keyset_line(B, n)
+
+        # Will handle Notify messages that
+        # B.link.register_for_event(("NOTIFY", {}, message["200_OK_1"]))
 
 
-def flow(users, call_taker_pool, call_takers, secondary_numbers):
-
-    A = next(users)
-    B = next(call_taker_pool)
-    line_appearance_index = next(secondary_numbers)
-    C = B.secondary_lines[line_appearance_index]
-    all_device_appearances = [device.secondary_lines[line_appearance_index] for device in call_takers]
-    appearance_invite_dialogs = {}
-
-    print("{} will dial {} and device {} will pickup".format(A.number, C.number, B.number))
-
-    A.send_new(C, message["Invite_SDP_1"])
-    invite = C.waitForMessage("INVITE")
-    assert "sip:" + C.number + "@" in invite["To"]
-    C.reply(message["Trying_1"])
-    C.reply(message["Ringing_1"])
-
-    invited_lines = []
-
-    for appearance in all_device_appearances:
-        if appearance is not C:
-            try:
-                dialog = appearance.waitForMessage("INVITE", timeout=0.1).get_dialog()
-                appearance.reply(message["Trying_1"])
-                appearance.reply(message["Ringing_1"])
-                invited_lines.append((appearance, dialog))
-            except TimeoutError:
-                pass
-
-    A.waitForMessage("180 Ringing", ignore_messages="100 Trying")
-    C.reply(message["200_OK_SDP_1"])
-
-    A.waitForMessage("200 OK")
-    A.send(message["Ack_1"])
-
-    C.waitForMessage("ACK")
-
-    for appearance, dialog in invited_lines:
+def wait_for_call(B, c_index):
+    C = B.secondary_lines[c_index]
+    C.link.register_for_event(("BYE", {}, message["200_OK_1"]))
+    debug(C.number + " waiting for calls from device " + B.number)
+    while not B.shutdown:
         try:
-            appearance.set_dialog(dialog)
-            appearance.waitForMessage("CANCEL")
-            appearance.reply(message["200_OK_1"])
-            appearance.send(message["487_Request_terminated"], dialog=dialog)
-            appearance.waitForMessage("ACK")
+            invite = C.waitForMessage("INVITE")
         except TimeoutError:
-            # Is it OK if some lines that got invite don't get CANCEL? Maybe if they get busy meanwhile.
-            pass
+            continue
 
-    sleep(params1["call_duration"])
+        try:
+            C.set_dialog(invite.get_dialog())
+            C.reply(message["Trying_1"])
+            C.reply(message["Ringing_1"])
 
-    A.send(message["Bye_1"], expected_response="200 OK")
+            other_lines = []
+            assert "sip:" + C.number + "@" in invite["To"]
 
-    C.waitForMessage("BYE")
-    C.reply(message["200_OK_1"])
-    debug("SUCCESSFUL CALL: {} dial {} device {} pickup".format(A.number, C.number, B.number))
+            C.reply(message["200_OK_SDP_1"])
+
+            for line in B.secondary_lines:
+                if line is not C:
+                    try:
+                        line.waitForMessage("INVITE", timeout=0.1)
+                        line.reply(message["Trying_1"])
+                        line.reply(message["Ringing_1"])
+                        other_lines.append(line)
+                    except TimeoutError:
+                        pass
+
+            C.waitForMessage("ACK")
+
+            for line in other_lines:
+                try:
+                    line.waitForMessage("CANCEL", timeout=2)
+                    line.reply(message["200_OK_1"])
+                    line.send(message["487_Request_terminated"], dialog=invite.get_dialog())
+                    line.waitForMessage("ACK")
+                except TimeoutError:
+                    # Is it OK if some lines that got invite don't get CANCEL? Maybe if they get busy meanwhile.
+                    pass
+
+            # C.waitForMessage("BYE")
+            # C.reply(message["200_OK_1"])
+        except:
+            debug("FAILED CALL on B side: device "+B.number)
+            debug(traceback.format_exc())
+            continue
+    debug(B.number + " exited")
+
+
+def flow(users, secondary_numbers):
+    A = next(users)
+    dial_number = next(secondary_numbers)
+    try:
+
+        print("{} will dial {}".format(A.number, dial_number))
+
+        A.send_new(dial_number, message["Invite_SDP_1"])
+
+        A.waitForMessage("200 OK", ignore_messages=["100 Trying", "180 Ringing"])
+        A.send(message["Ack_1"])
+
+        sleep(params1["call_duration"])
+
+        A.send(message["Bye_1"], expected_response="200 OK")
+
+        debug("SUCCESSFUL CALL: {} to {} ".format(A.number, dial_number))
+    except KeyboardInterrupt:
+        print("Stopping test")
+        raise
+    except:
+        debug("FAILED CALL on A side: {} to {} ".format(A.number, dial_number))
+        debug(traceback.format_exc())
 
 
 def tear_down(A, B):
@@ -207,13 +225,13 @@ if __name__ == "__main__":
     number_of_secondary_lines = 10
     number_of_users = 10
 
-    params1 = {"orig_osv_sipsm_ip": "10.5.42.44", "orig_osv_sipsm_port": 5060, "transport": "TCP", "call_duration": 8}
+    params1 = {"orig_osv_sipsm_ip": "10.5.42.44", "orig_osv_sipsm_port": 5060, "transport": "TCP", "call_duration": 5}
 
     params2 = {"psap_thig_ip": "10.0.26.20", "psap_thig_port": 5060, "transport": "TCP"}
 
     user_numbers = ("3021023" + str(i) for i in range(10010, 10010 + number_of_users))
     call_taker_numbers = ("3021069" + str(i) for i in range(60210, 60210 + number_of_call_takers))
-    secondaryNumbers = ["911"+str(i) for i in range(90, 90 + number_of_secondary_lines)]
+    secondary_numbers = ["911"+str(i) for i in range(90, 90 + number_of_secondary_lines)]
 
     users = [SipEndpoint(a) for a in user_numbers]
     call_takers = [SipEndpoint(b) for b in call_taker_numbers]
@@ -221,29 +239,30 @@ if __name__ == "__main__":
 
     user_pool = cycle(users)
     call_taker_pool = cycle(call_takers)
-    secondary_line_pool = cycle(secondary_lines)
+    secondary_line_pool = cycle(secondary_numbers)
 
     user_port_pool = (("10.5.45.19", port)
-                       for port in
-                       range(13000, 13000+number_of_users))
+                      for port in
+                      range(13000, 13000+number_of_users))
 
     call_taker_ip_pool = (("10.5.45."+str(i), 5566)
                           for i in
                           range(20, 20+number_of_call_takers))
+    agentThreads = []
 
     try:
         for user, call_taker in zip(users, call_takers):
-            setup(user, call_taker, secondaryNumbers, user_port_pool, call_taker_ip_pool)
-            sleep(0.5)
+            connect(user, call_taker, user_port_pool, call_taker_ip_pool)
 
-        # flow(user_pool, call_taker_pool, call_takers, secondary_line_pool)
-        # sleep(15)
-        # flow(user_pool, call_taker_pool, call_takers, secondary_line_pool)
+
+        register(users, call_takers, secondary_numbers, expiration=360)
+        for call_taker, secondary_line in zip(call_takers, secondary_lines):
+            call_taker.shutdown = False
+            agentThreads.append(util.serverThread(wait_for_call, call_taker, secondary_line))
+            sleep(0.1)
 
         test = util.Load(flow,
                          user_pool,
-                         call_taker_pool,
-                         call_takers,
                          secondary_line_pool,
                          duration=-1,
                          quantity=1,
@@ -252,5 +271,8 @@ if __name__ == "__main__":
         test.monitor()
     finally:
         for user, call_taker in zip(users, call_takers):
+            call_taker.shutdown = True
             tear_down(user, call_taker)
 
+        for thread in agentThreads:
+            thread.result()

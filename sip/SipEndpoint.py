@@ -47,21 +47,30 @@ class SipEndpoint(object):
                                     "method": None
                                     }
 
-        self.waitForMessage = self.wait_for_message # compatibility alias
+        self.waitForMessage = self.wait_for_message  # compatibility alias
         self.secondary_lines = []
         self.message_buffer = []
         self.registered = False
-        self.re_register_timer=None
+        self.re_register_timer = None
         self.busy = False
+
+    def update_parameters(self, params, force=False):
+        """
+        Update endpoint parameters. This is useful for adding more flexibility in the creation of SIP messages
+
+        :param params: The key-value pairs input
+        :param force: Force update of existing variables
+        :return: None
+        """
+        for parameter in params:
+            if parameter not in self.parameters or force is True:
+                self.parameters[parameter] = params[parameter]
 
     def connect(self, local_address, destination_address, protocol="tcp", certificate=None, subject_name="localhost"):
         """ Connect to the SIP Server """
         local_ip, local_port = local_address
         dest_ip, dest_port = destination_address
-        self.ip = local_ip
-        self.port = local_port
-        self.parameters["source_ip"] = local_ip
-        self.parameters["source_port"] = local_port
+        self.set_address(local_address)
         self.parameters["dest_ip"] = dest_ip
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
@@ -105,6 +114,19 @@ class SipEndpoint(object):
                 return dialog
         return in_dialog
 
+    def set_address(self, address):
+        """
+        We can create and Endpoint just to use it as target for sip messages
+
+        :param address: The address as an (ip, port) tuple
+        :return: None
+        """
+        local_ip, local_port = address
+        self.ip = local_ip
+        self.port = local_port
+        self.parameters["source_ip"] = local_ip
+        self.parameters["source_port"] = local_port
+
     def use_link(self, link):
         """ Convenience function to use an existing network connection"""
         protocol = ["TCP", "UDP"][link.socket.proto]
@@ -120,7 +142,7 @@ class SipEndpoint(object):
         self.parameters["dest_ip"] = dest_ip
         self.parameters["dest_port"] = dest_port
         self.parameters["transport"] = protocol
-        #self.link.endpoints_connected += 1
+        # self.link.endpoints_connected += 1
 
     def set_dialog(self, dialog):
         """ Change current dialog to the one provided """
@@ -245,13 +267,13 @@ class SipEndpoint(object):
 
         if expected_response:
             # try:
-                self.waitForMessage(message_type=expected_response, dialog=new_dialog, ignore_messages=ignore_messages)
-            # except AssertionError:
-            #     raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
-            #                                                                 self.get_last_message_in(
-            #                                                                     m.get_dialog()).get_status_or_method(),
-            #                                                                 m.method,
-            #                                                                 m))
+            self.waitForMessage(message_type=expected_response, dialog=new_dialog, ignore_messages=ignore_messages)
+        # except AssertionError:
+        #     raise AssertionError('{}: "{}" response to "{}"\n{}'.format(self.number,
+        #                                                                 self.get_last_message_in(
+        #                                                                     m.get_dialog()).get_status_or_method(),
+        #                                                                 m.method,
+        #                                                                 m))
         return m
 
     def send_in_ctx_of(self, reference_message, this_message_string="", expected_response=None, ignore_messages=[]):
@@ -313,7 +335,7 @@ class SipEndpoint(object):
         :return: the buffered SipMessage
         """
         msg = None
-        #for message in self.message_buffer:
+        # for message in self.message_buffer:
         for i in range(len(self.message_buffer)):
             message = self.message_buffer[i]
             d = message.get_dialog()
@@ -401,7 +423,7 @@ class SipEndpoint(object):
         if inmessage.type == "Request":
             self.set_transaction(inmessage.get_transaction())
         else:
-            assert inmessage.cseq_method == transaction["method"],\
+            assert inmessage.cseq_method == transaction["method"], \
                 "Got {} to {} instead of {} to {}".format(inmessage.get_status_or_method(),
                                                           inmessage.cseq_method,
                                                           message_type,
@@ -484,4 +506,3 @@ class SipEndpoint(object):
             self.re_register_timer.cancel()
         flow.unregister(self)
         self.registered = False
-

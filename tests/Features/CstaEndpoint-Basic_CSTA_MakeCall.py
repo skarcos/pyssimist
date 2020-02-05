@@ -1,5 +1,6 @@
 import sys
-sys.path.append("..")
+from os import path
+sys.path.append(path.join("..", ".."))
 from sip.messages import message
 from csta.CstaEndpoint import CstaEndpoint
 from time import sleep

@@ -1,7 +1,8 @@
 import sys
 from copy import copy
 
-sys.path.append("..")
+from os import path
+sys.path.append(path.join("..", ".."))
 from sip.messages import message
 from sip.SipEndpoint import SipEndpoint
 from time import sleep

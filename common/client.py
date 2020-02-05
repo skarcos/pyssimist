@@ -40,7 +40,8 @@ class TCPClient(object):
             data = self.socket.recv(buffer)
         finally:
             self.socket.settimeout(bkp)
-        debug("Received on port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+        debug("Received on port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
+                                                                                                             "\n"))
         return data
 
     def waitForSipData(self, timeout=None):
@@ -89,7 +90,9 @@ class TCPClient(object):
             while len(data) < datalength:
                 data += self.socket.recv(datalength - len(data))
             # print('message:\n{}\nsize{}\n'.format(data,datalength))
-            debug("Received on port {}:\n\n".format(self.port) + (header + data).decode("utf8", "backslashreplace").replace("\r\n", "\n"))
+            debug("Received on port {}:\n\n".format(self.port) + (header + data).decode("utf8",
+                                                                                        "backslashreplace").replace(
+                "\r\n", "\n"))
         finally:
             self.socket.settimeout(bkp)
         return header + data
@@ -112,8 +115,15 @@ class TLSClient(TCPClient):
         self.port = port
         self.rip, self.rport = None, None
         self.server_name = subject_name
+
         # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
-        self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        if hasattr(ssl, "PROTOCOL_TLS_CLIENT"):
+            self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        elif hasattr(ssl, "PROTOCOL_TLSv1_1"):
+            self.context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_1)
+        else:
+            self.context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+
         if not certificate:
             self.context.check_hostname = False
             self.context.verify_mode = ssl.CERT_NONE
@@ -121,7 +131,6 @@ class TLSClient(TCPClient):
         else:
             # certificate example: 'path/to/my_certificate.pem'
             self.context.load_verify_locations(certificate)
-
 
     def connect(self, dest_ip, dest_port):
         tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

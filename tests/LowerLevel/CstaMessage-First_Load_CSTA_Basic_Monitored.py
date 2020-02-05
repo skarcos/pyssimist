@@ -1,6 +1,7 @@
 import sys
 
-sys.path.append("..")
+from os import path
+sys.path.append(path.join("..", ".."))
 from common.client import TCPClient
 from sip.SipParser import parseBytes, buildMessage
 from csta.CstaParser import parseBytes as parseBytes_csta
