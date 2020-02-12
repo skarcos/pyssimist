@@ -186,6 +186,9 @@ class SipEndpoint(object):
 
     def get_last_message_in(self, dialog):
         """ Get the last message sent or received in the provided dialog """
+        # If we have received no messages yet return None
+        if self.current_dialog == {"Call-ID": None, "from_tag": None, "to_tag": None}:
+            return None
         # First check for complete dialogs
         for message in self.last_messages_per_dialog:
             if message.get_dialog() == dialog:
@@ -368,7 +371,8 @@ class SipEndpoint(object):
 
         inmessage = None
         last_sent_message = self.get_last_message_in(dialog)
-        transaction = last_sent_message.get_transaction()
+        if last_sent_message:
+            transaction = last_sent_message.get_transaction()
         len_buffer = len(self.message_buffer)
         count = 0
 

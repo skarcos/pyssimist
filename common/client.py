@@ -35,7 +35,8 @@ class TCPClient(object):
     def waitForData(self, timeout=None, buffer=4096):
         debug("Waiting on port {}".format(self.port))
         bkp = self.socket.gettimeout()
-        if timeout: self.socket.settimeout(timeout)
+        if timeout:
+            self.socket.settimeout(timeout)
         try:
             data = self.socket.recv(buffer)
         finally:
@@ -47,7 +48,8 @@ class TCPClient(object):
     def waitForSipData(self, timeout=None):
         debug("Waiting on port {}".format(self.port))
         bkp = self.socket.gettimeout()
-        if timeout: self.socket.settimeout(timeout)
+        if timeout:
+            self.socket.settimeout(timeout)
         try:
             content_length = -1
             data = b""
