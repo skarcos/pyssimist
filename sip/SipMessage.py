@@ -23,7 +23,7 @@ class SipMessage(object):
         self.request_line = ""
         self.body = body
         if body:
-            self.header["Content-Length"] = str(len(body.strip()) + 2)
+            self.header["Content-Length"] = str(len(body.strip()) + 4)
         else:
             self.header["Content-Length"] = "0"
         self.to_tag = ""

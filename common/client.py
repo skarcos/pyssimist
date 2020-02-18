@@ -6,18 +6,23 @@ import socket, ssl
 from common.tc_logging import debug
 
 
+class NoData(Exception):
+    pass
+
+
 class TCPClient(object):
     def __init__(self, ip, port):
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    def connect(self, dest_ip, dest_port):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.ip, self.port))
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
 
-    def connect(self, dest_ip, dest_port):
         self.socket.connect((dest_ip, dest_port))
         self.rip = dest_ip
         self.rport = dest_port
@@ -69,7 +74,7 @@ class TCPClient(object):
 
             if content_length == -1:
                 debug(data.decode())
-                raise Exception("No content length in message")
+                raise NoData("No content length in message")
         except ValueError:
             debug(data.decode())
             debug(line.decode())

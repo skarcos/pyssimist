@@ -41,7 +41,7 @@ def parseBytes(bString, sep="\r\n", encoding=ENCODING):
     else:
         reqP = re.match(r"^(\w+) \S+ SIP/\d\.?\d?$", request_or_response, re.I)
         if not reqP:
-            raise Exception("Not a valdid request or response.. or parse logic error", request_or_response)
+            raise Exception("Not a valid request or response.. or parse logic error", request_or_response)
             # return None
 
         # make sure all mandatory headers are present

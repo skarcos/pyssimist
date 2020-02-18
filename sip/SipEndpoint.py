@@ -30,6 +30,7 @@ class SipEndpoint(object):
                            "fromTag": None,
                            "viaBranch": None,
                            "epid": None,
+                           "expires": 360,
                            "cseq": None
                            }
         self.last_messages_per_dialog = []
@@ -245,6 +246,7 @@ class SipEndpoint(object):
             self.parameters["userA"] = self.number
             if isinstance(target_sip_ep, SipEndpoint):
                 self.parameters["userB"] = target_sip_ep.number
+                target_sip_ep.parameters["userB"] = self.number
             elif isinstance(target_sip_ep, str):
                 self.parameters["userB"] = target_sip_ep
             else:
@@ -342,7 +344,9 @@ class SipEndpoint(object):
         for i in range(len(self.message_buffer)):
             message = self.message_buffer[i]
             d = message.get_dialog()
-            if d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]:
+            # If we have received no messages yet return the first message in the buffer
+            if self.current_dialog == {"Call-ID": None, "from_tag": None, "to_tag": None} or \
+                    (d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]):
                 msg = message
                 self.message_buffer.pop(i)
                 break

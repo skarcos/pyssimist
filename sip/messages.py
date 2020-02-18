@@ -8,7 +8,6 @@ User-Agent: OpenScape Voice V9R0
 Content-Length: 0
 Max-Forwards: 70
 Via: SIP/2.0/{transport} {source_ip}:{source_port};branch={viaBranch}
-
 ''',
 		"200_OK_Notify":'''
 SIP/2.0 200 OK
