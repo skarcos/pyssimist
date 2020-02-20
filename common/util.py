@@ -35,7 +35,7 @@ def randomTag():
 
 def getLocalIP():
     # TODO
-    return "10.2.31.5"
+    return "10.4.253.10"
 
 
 def randomBranch():

@@ -2,6 +2,7 @@ import sys
 from copy import copy
 
 from os import path
+
 sys.path.append(path.join("..", ".."))
 from sip.messages import message
 from sip.SipEndpoint import SipEndpoint
@@ -51,21 +52,22 @@ def handle_notify(sip_ep):
 if __name__ == "__main__":
     params1 = {"orig_osv_sipsm_ip": "10.5.42.44",
                "orig_osv_sipsm_port": 5060,
-               "local_ip": "10.5.45.19",
-               "local_port": 13000,
+               "local_ip": "10.4.253.10",
+               "local_port": 15000,
                "transport": "tcp",
                "call_duration": 8}
 
     params2 = {"psap_thig_ip": "10.0.26.20",
                "psap_thig_port": 5060,
-               "local_ip": "10.5.45.20",
+               "local_ip": "10.4.253.10",
                "local_port": 13001,
                "transport": "tcp"}
 
     A = SipEndpoint("302102310010")
     B = SipEndpoint("302106960219")
 
-    A.connect((params1["local_ip"], params1["local_port"]), (params1["orig_osv_sipsm_ip"], params1["orig_osv_sipsm_port"]),
+    A.connect((params1["local_ip"], params1["local_port"]),
+              (params1["orig_osv_sipsm_ip"], params1["orig_osv_sipsm_port"]),
               params1["transport"])
 
     B.connect((params2["local_ip"], params2["local_port"]), (params2["psap_thig_ip"], params2["psap_thig_port"]),
@@ -76,7 +78,7 @@ if __name__ == "__main__":
 
     A.register()
     register_primary(B)
-    add_keyset_line(B,"91190")
+    add_keyset_line(B, "91190")
 
     A.send_new(B, message["Invite_SDP_1"], expected_response="Trying")
     B.waitForMessage("INVITE")
@@ -96,7 +98,6 @@ if __name__ == "__main__":
     sleep(params1["call_duration"])
 
     A.send(message["Bye_1"], expected_response="200 OK")
-
 
     B.waitForMessage("BYE")
     B.reply(message["200_OK_1"])
