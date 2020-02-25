@@ -204,21 +204,26 @@ class XmlBody:
         else:
             for child in parent:
                 ch = self.get_tag(tag, parent=child)
-                if not ch is None:
+                if ch is not None:
                     return ch
 
-    def get_all(self, key, position="root"):
+    def get_all(self, tag, position="root"):
         """
-         Find all tags in all namespaces
+         Find all tags with this name in all namespaces
         :param key: The requested tag name
         :param position: The element to look below
         :return: A list of all elements with specified tag
         """
         if position == "root":
             position = self.root
-        elements = position.findall("{" + self.namespace + "}" + key)
-        for name in self.ns_map:
-            elements += ([el for el in position.findall(name + ":" + key, self.ns_map) if el])
+        elements = []
+        if position.tag.endswith("}" + tag):
+            elements.append(position)
+        else:
+            for child in position:
+                ch = self.get_tag(tag, parent=child)
+                if ch is not None:
+                    elements.append(ch)
         return elements
 
     def get_child(self, parent, tag):
@@ -319,6 +324,7 @@ class Load(object):
 
 class LoadThread(Thread):
     """ I had to make a custom thread class to handle exceptions """
+
     def run(self):
         self.exc = False
         try:

@@ -29,15 +29,18 @@ class SipMessage(object):
         self.to_tag = ""
         self.from_tag = ""
         self.via_branch = ""
-        M = re.search(r"tag=([^;]+)",self.header["To"])
-        if M:
-            self.to_tag = M.group(1)
-        M = re.search(r"tag=([^;]+)",self.header["From"])
-        if M:
-            self.from_tag = M.group(1)
-        M = re.search(r"branch=([^;]+)",self.header["Via"])
-        if M:
-            self.via_branch = M.group(1)
+        if "To" in self.header:
+            M = re.search(r"tag=([^;]+)", self.header["To"])
+            if M:
+                self.to_tag = M.group(1)
+        if "From" in self.header:
+            M = re.search(r"tag=([^;]+)", self.header["From"])
+            if M:
+                self.from_tag = M.group(1)
+        if "Via" in self.header:
+            M = re.search(r"branch=([^;]+)", self.header["Via"])
+            if M:
+                self.via_branch = M.group(1)
 
     def __eq__(self, message_or_method_or_status):
         """
@@ -71,7 +74,7 @@ class SipMessage(object):
             if "tag" in self.header["From"]:
                 self.header["From"] = re.sub("tag=[^;]+", "tag=%s", self.header["From"]) % self.from_tag
             else:
-                self.header["From"] = self.header["From"]+";tag="+self.from_tag
+                self.header["From"] = self.header["From"] + ";tag=" + self.from_tag
 
         if self.to_tag:
             if "tag" in self.header["To"]:
@@ -190,7 +193,6 @@ class SipMessage(object):
             return self.method
         elif self.type == "Response":
             return self.status
-
 
     def increase_cseq(self):
         cseq, method = self.header["CSeq"].split()

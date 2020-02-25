@@ -9,7 +9,7 @@ ENCODING = "utf8"
 MANDATORY_REQUEST_HEADERS = set(("To", "From", "CSeq", "Call-ID", "Max-Forwards", "Via"))
 
 
-def buildMessage(message, parameters):
+def buildMessage(message, parameters={}):
     # remove whitespace from start and end TODO test this change on existing testcases
     message = re.sub("\n +","\n",message)
     tString = message.strip().format(**parameters)
