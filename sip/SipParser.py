@@ -6,7 +6,7 @@ import re
 from sip.SipMessage import SipMessage
 
 ENCODING = "utf8"
-MANDATORY_REQUEST_HEADERS = set(("To", "From", "CSeq", "Call-ID", "Max-Forwards", "Via"))
+MANDATORY_REQUEST_HEADERS = {"To", "From", "CSeq", "Call-ID", "Max-Forwards"}
 
 
 def buildMessage(message, parameters={}):
