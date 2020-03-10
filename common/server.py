@@ -2,17 +2,15 @@
 Purpose: Network connection facilities - mock servers
 Initial Version: Costas Skarakis 16/2/2020
 """
+import selectors
 import socket
-import types
+import threading
 
 import common.client as my_clients
-import selectors
-import threading
 from sip.SipEndpoint import SipEndpoint
 
 
 # With help from https://github.com/realpython/materials/blob/master/python-sockets-tutorial/multiconn-server.py
-from sip.SipParser import parseBytes
 
 
 class SipServer:
@@ -35,7 +33,7 @@ class SipServer:
             # context.load_cert_chain('/path/to/certchain.pem', '/path/to/private.key')
             raise NotImplemented
         self.server_thread = None
-        self.sip_endpoint = SipEndpoint.SipEndpoint("PythonSipServer")
+        self.sip_endpoint = SipEndpoint("PythonSipServer")
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
@@ -67,6 +65,7 @@ class SipServer:
     def serve_forever(self):
         self.socket.bind((self.ip, self.port))
         self.socket.listen()
+        self.port = self.socket.getsockname()[1]
         print("listening on", (self.ip, self.port))
         self.socket.setblocking(False)
         self.sel.register(self.socket, selectors.EVENT_READ, data=None)

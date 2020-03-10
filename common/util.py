@@ -80,6 +80,32 @@ def serverThread(target, *args, **kwargs):
     return thread
 
 
+def wait_for_sip_data(sockfile):
+    content_length = -1
+    data = b""
+    data += sockfile.readline()
+
+    while True:
+        line = sockfile.readline()
+        data += line
+        if not line.strip():
+            break
+        header, value = [x.strip() for x in line.split(b":", 1)]
+        if header == b"Content-Length":
+            content_length = int(value)
+
+    if content_length > 0:
+        data += sockfile.read(content_length)
+
+    if content_length == -1:
+        raise NoData("No content length in message")
+    return data
+
+
+class NoData(Exception):
+    pass
+
+
 class XmlBody:
     """
     Very simple representation of an xml document

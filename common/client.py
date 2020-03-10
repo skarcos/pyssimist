@@ -2,12 +2,11 @@
 Purpose: Network connection facilities
 Initial Version: Costas Skarakis 11/11/2018
 """
-import socket, ssl
+import socket
+import ssl
+
 from common.tc_logging import debug
-
-
-class NoData(Exception):
-    pass
+from common.util import wait_for_sip_data
 
 
 class TCPClient(object):
@@ -20,6 +19,7 @@ class TCPClient(object):
     def connect(self, dest_ip, dest_port):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.ip, self.port))
+        self.port = self.socket.getsockname()[1]
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
 
@@ -53,31 +53,14 @@ class TCPClient(object):
     def waitForSipData(self, timeout=None):
         debug("Waiting on port {}".format(self.port))
         bkp = self.socket.gettimeout()
+        data = b""
         if timeout:
             self.socket.settimeout(timeout)
         try:
-            content_length = -1
-            data = b""
-            data += self.sockfile.readline()
-
-            while True:
-                line = self.sockfile.readline()
-                data += line
-                if not line.strip():
-                    break
-                header, value = [x.strip() for x in line.split(b":", 1)]
-                if header == b"Content-Length":
-                    content_length = int(value)
-
-            if content_length > 0:
-                data += self.sockfile.read(content_length)
-
-            if content_length == -1:
-                debug(data.decode())
-                raise NoData("No content length in message")
+            data = wait_for_sip_data(self.sockfile)
         except ValueError:
             debug(data.decode())
-            debug(line.decode())
+            # debug(line.decode())
             raise
         except socket.timeout:
             debug('Data received before timeout: "{}"'.format(data.decode()))
@@ -144,6 +127,7 @@ class TLSClient(TCPClient):
         self.socket = self.context.wrap_socket(tcp_socket, server_hostname=self.server_name)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.ip, self.port))
+        self.port = self.socket.getsockname()[1]
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
         super().connect(dest_ip, dest_port)
