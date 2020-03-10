@@ -17,6 +17,7 @@ from sip.SipParser import buildMessage
 
 
 def open_cap_file(filename, tshark_path, tshark_filter=None):
+    outfile = filename.rsplit(".", 1)[0] + ".json"
     if not tshark_path:
         print("tshark_path not provided. Program installation path must exist in PATH environment variable")
         tshark = "tshark"
@@ -28,14 +29,14 @@ def open_cap_file(filename, tshark_path, tshark_filter=None):
         filter = "-Y \"{}\"".format(tshark_filter)
     else:
         filter = ""
-    cmd = f"{tshark} -r {filename} {filter}  -T json > traceoutput.json"
+    cmd = f"{tshark} -r {filename} {filter}  -T json > " + outfile
     print(cmd)
     out, err = sb.Popen(cmd, shell=True, stdout=sb.PIPE, stderr=sb.PIPE).communicate()
     if out:
         print(out)
     if err:
         print(err)
-    return os.path.join(".", "traceoutput.json")
+    return os.path.join(".", outfile)
 
 
 def get_from_cap_file(filename, tshark_path=""):
