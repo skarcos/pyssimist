@@ -43,9 +43,9 @@ def analyze(tracefile, *criteria, wireshark_filter=None):
                 if expand:
                     for m_line in m_lines[1:]:
                         output += ("{:" + str(len(o_line.rsplit("|", 1)[0])+2) + "}{}\n").format(" ", m_line)
-    print(output)
     with open(outfile, "w") as sip_trace:
         sip_trace.write(output)
+    return outfile
 
 
 def GetArgs():
