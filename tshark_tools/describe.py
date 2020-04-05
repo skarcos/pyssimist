@@ -1,12 +1,11 @@
 import argparse
 import pprint
+from datetime import datetime
 from os import chdir, listdir, path
 import sys
-
-
 sys.path.append("..")
 sys.path.append(path.join("..", ".."))
-from tshark_tools.lib import get_msg_list_from_file, msg_filter, make_sip_message_template
+from tshark_tools.lib import get_msg_list_from_file, msg_filter, make_sip_message_template, summarize_trace
 from sip.SipParser import buildMessage
 
 
@@ -26,27 +25,24 @@ def describe(tracefile, filters, wireshark_filter=None, tshark_path=None):
         i_format = "json"
     else:
         i_format = "pcapng"
-    list1 = get_msg_list_from_file(tracefile,
-                                   input_format=i_format,
-                                   wireshark_filter=wireshark_filter,
-                                   tshark_path=tshark_path)
-    if not list1:
-        return None
-    test_data = {}
-    if "Call-ID" not in filters:
-        filters["Call-ID"] = []
     count = 0
-    for msg in list1:
-        sip_msg = buildMessage(msg, {})
-        key = sip_msg.get_status_or_method().split()[0] + "_" + str(count)
-        if msg_filter(sip_msg, filters) is None:
-            if sip_msg.type == "Request":
-                filters["Call-ID"].append(sip_msg["Call-ID"])
-            continue
-        msg_template = make_sip_message_template(msg, purpose="testcase")
-        if msg_template not in test_data.values():
-            test_data[key] = msg_template
-            count += 1
+    subs = {}
+    test_data = {}
+    summary = summarize_trace(tracefile, input_format=i_format, tshark_filter=wireshark_filter)
+    for transport in summary["sip"]:
+        if isinstance(summary["sip"][transport], list):
+            for time_epoch, fromaddr, toaddr, message, expand in summary["sip"][transport]:
+                if "Call-ID" not in filters:
+                    filters["Call-ID"] = []
+                key = message.get_status_or_method().split()[0] + "_" + str(count)
+                if msg_filter(message, filters) is None:
+                    if message.type == "Request":
+                        filters["Call-ID"].append(message["Call-ID"])
+                    continue
+                msg_template = make_sip_message_template(message, purpose="testcase")
+                if msg_template not in test_data.values():
+                    test_data[key] = msg_template
+                    count += 1
 
     with open(tc_data, "w") as sip_trace:
         sip_trace.write(pprint.pformat(test_data, width=200))

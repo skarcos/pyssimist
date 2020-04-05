@@ -35,8 +35,18 @@ replacement_set = {"diff": {r"Call-ID: .*": "Call-ID: {callId}",
                             # 3_plus_character_string_with_only_digits_and_special_characters
                             },
                    "testcase": {r"Call-ID: .*": "Call-ID: {callId}",
-                                r"To: \".*\" <sip:.*@[\w\d\.]+:\d+": r"To: \"{userB}\" <sip:{userB}@{dest_ip}:{dest_port}",
-                                r"To: <sip:.*@[\w\d\.]+": r"To: <sip:{userB}@{dest_ip}",
+                                r"(REGISTER|NOTIFY|SUBSCRIBE)sip:.*@[\w\d\.]+:\d+":
+                                    r"\1 sip:{user}@{dest_ip}:{dest_port}",
+                                r"(REGISTER|NOTIFY|SUBSCRIBE) sip:.*@[\w\d\.]+":
+                                    r"\1 sip:{user}@{dest_ip}",
+                                # All request but NOTIFY SUBSCRIBE and REGISTER have the B side user
+                                r"([A-Z]+) sip:.*@[\w\d\.]+:\d+": r"\1 sip:{userB}@{dest_ip}:{dest_port}",
+                                r"([A-Z]+) sip:.*@[\w\d\.]+": r"\1 sip:{userB}@{dest_ip}",
+                                # To header includes the B side user
+                                r"To: \".*\" <sip:.*@[\w\d\.]+:\d+":
+                                    r"To: \"{userB}\" <sip:{userB}@{dest_ip}:{dest_port}",
+                                r"To: <sip:.*@[\w\d\.]+":
+                                    r"To: <sip:{userB}@{dest_ip}",
                                 r"sip:.*@[\w\d\.]+:\d+": r"sip:{user}@{dest_ip}:{dest_port}",
                                 r"sip:.*@[\w\d\.]+": r"sip:{user}@{dest_ip}",
                                 r": .* <": ": \"{user}\" <",
@@ -293,6 +303,8 @@ def check_in_trace(*conditions_list, check_trace, input_format="pcapng", tshark_
         msg_list = check_trace
     else:
         msg_list = get_msg_list_from_file(check_trace, input_format=input_format, tshark_path=tshark_path)
+    if not conditions_list:
+        return msg_list
     for conditions in conditions_list:
         for msg_str in msg_list:
             try:
@@ -402,7 +414,7 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
                 dst_addr = "{:<15}:{:>5}".format(j_msg["_source"]["layers"][ip_layer][ip_layer + ".dst"],
                                                  j_msg["_source"]["layers"][transport_layer][
                                                      transport_layer + ".dstport"])
-                if tests and application == "sip":
+                if application == "sip":
                     try:
                         msg_raw = assemble_message_from_json(j_msg, appl=application)
                         msg_obj = buildMessage(msg_raw)
