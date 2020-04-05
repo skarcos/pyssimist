@@ -63,6 +63,7 @@ def GetArgs():
     args = parser.parse_args()
     return args
 
+
 if __name__ == "__main__":
     # diff(ref_trace="reference.json", check_trace="traceoutput.json", input_format="json")
     ignore = {"Message": ["OPTIONS"]}

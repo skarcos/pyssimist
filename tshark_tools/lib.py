@@ -15,6 +15,46 @@ from common.util import XmlBody
 from sip.SipMessage import SipMessage
 from sip.SipParser import buildMessage
 
+replacement_set = {"diff": {r"Call-ID: .*": "Call-ID: {callId}",
+                            r"sip:.*@[\w\d\.]+:\d+": r"sip:{user}@{dest_ip}:{dest_port}",
+                            r"sip:.*@[\w\d\.]+": r"sip:{user}@{dest_ip}",
+                            r": .* <": ": \"{user}\" <",
+                            r"transport=\w{3}": "transport={transport}",
+                            r"SIP/2\.0/\w{3}": "SIP/2.0/{transport}",
+                            r"(From.*)tag=.*": r"\1tag={fromTag}",
+                            r"(To.*)tag=.*": r"\1tag={toTag}",
+                            r"(Via.*)branch=.*": r"\1branch={viaBranch}",
+                            r"CSeq: \d+ ([A-Z]+)": r"CSeq: {cseq} \1",
+                            r"Max-Forwards: \d+": r"Max-Forwards: {max_forwards}",
+                            r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+": r"{ip}:{port}",
+                            r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}": r"{ip}",
+                            r"^([\w-]+): \d+": r"\1: {\1}",
+                            r"\d{5,}": "{num}",  # {five_plus_digit_number
+                            r"[0-9A-Fa-f]{10,}": "{hash}",  # 10_plus_character_hex_string
+                            r"[\d\.-_/\\~]{3,}": "{hash}"
+                            # 3_plus_character_string_with_only_digits_and_special_characters
+                            },
+                   "testcase": {r"Call-ID: .*": "Call-ID: {callId}",
+                                r"To: \".*\" <sip:.*@[\w\d\.]+:\d+": r"To: \"{userB}\" <sip:{userB}@{dest_ip}:{dest_port}",
+                                r"To: <sip:.*@[\w\d\.]+": r"To: <sip:{userB}@{dest_ip}",
+                                r"sip:.*@[\w\d\.]+:\d+": r"sip:{user}@{dest_ip}:{dest_port}",
+                                r"sip:.*@[\w\d\.]+": r"sip:{user}@{dest_ip}",
+                                r": .* <": ": \"{user}\" <",
+                                r"transport=\w{3}": "transport={transport}",
+                                r"SIP/2\.0/\w{3}": "SIP/2.0/{transport}",
+                                r"(From.*)tag=.*": r"\1tag={fromTag}",
+                                r"(To.*)tag=.*": r"\1tag={toTag}",
+                                r"(Via.*)branch=.*": r"\1branch={viaBranch}",
+                                r"CSeq: \d+ ([A-Z]+)": r"CSeq: {cseq} \1",
+                                r"Max-Forwards: \d+": r"Max-Forwards: {max_forwards}",
+                                r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+": r"{ip}:{port}",
+                                r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}": r"{ip}",
+                                r"^([\w-]+): \d+": r"\1: {\1}",
+                                r"\d{5,}": "{num}",  # {five_plus_digit_number
+                                r"[0-9A-Fa-f]{10,}": "{hash}",  # 10_plus_character_hex_string
+                                }
+                   }
+
 
 def open_cap_file(filename, tshark_path, tshark_filter=None):
     outfile = filename.rsplit(".", 1)[0] + ".json"
@@ -39,16 +79,17 @@ def open_cap_file(filename, tshark_path, tshark_filter=None):
     return os.path.join(".", outfile)
 
 
-def get_from_cap_file(filename, tshark_path=""):
+def get_from_cap_file(filename, wireshark_filter=None, tshark_path=""):
     """
     Read a tethereal/tshark/wireshark file and return all the messages as a list of strings
     Requires tshark installed.
 
     :param filename:  the name of file (pcapng content)
     :param tshark_path: the location of tshark.
+    :param wireshark_filter: apply a wireshark filter to the output
     :return: a list of messages as a list of strings
     """
-    j_output = open_cap_file(filename, tshark_path)
+    j_output = open_cap_file(filename, tshark_path, wireshark_filter)
     return get_sip_from_json_file(j_output)
 
 
@@ -105,12 +146,12 @@ def assemble_message_from_json(j_msg, appl):
     elif appl == "rtp":
         this_msg = "RTP payload"
     else:
-        this_msg = appl+" content"
+        this_msg = appl + " content"
 
     return this_msg
 
 
-def make_sip_message_template(sip_message):
+def make_sip_message_template(sip_message, purpose="diff"):
     """
     Takes a SipMessage instance and returns a string with all dynamic elements removed and replaced with placeholders
     :param sip_message: The SipMessage instance or a sip message as string
@@ -123,24 +164,7 @@ def make_sip_message_template(sip_message):
     else:
         print("Invalid sip message type", type(sip_message))
         return -1
-    replacements = {r"Call-ID: .*": "Call-ID: {callId}",
-                    r"sip:.*@[\w\d\.]+:\d+": r"sip:{user}@{dest_ip}:{dest_port}",
-                    r"sip:.*@[\w\d\.]+": r"sip:{user}@{dest_ip}",
-                    r": .* <": ": \"{user}\" <",
-                    r"transport=\w{3}": "transport={transport}",
-                    r"SIP/2\.0/\w{3}": "SIP/2.0/{transport}",
-                    r"(From.*)tag=.*": r"\1tag={fromTag}",
-                    r"(To.*)tag=.*": r"\1tag={toTag}",
-                    r"(Via.*)branch=.*": r"\1branch={viaBranch}",
-                    r"CSeq: \d+ ([A-Z]+)": r"CSeq: {cseq} \1",
-                    r"Max-Forwards: \d+": r"Max-Forwards: {max_forwards}",
-                    r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+": r"{ip}:{port}",
-                    r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}": r"{ip}",
-                    r"^([\w-]+): \d+": r"\1: {\1}",
-                    r"\d{5,}": "{num}",  # {five_plus_digit_number
-                    r"[0-9A-Fa-f]{10,}": "{hash}",  # 10_plus_character_hex_string
-                    r"[\d\.-_/\\~]{3,}": "{hash}"  # 3_plus_character_string_with_only_digits_and_special_characters
-                    }
+    replacements = replacement_set[purpose]
     result = ""
     for line in contents.split("\r\n"):
         for item in replacements:
@@ -150,11 +174,11 @@ def make_sip_message_template(sip_message):
     return result + "\r\n"
 
 
-def get_msg_list_from_file(trace_file, input_format, tshark_path):
+def get_msg_list_from_file(trace_file, input_format, wireshark_filter=None, tshark_path=""):
     if not tshark_path and platform.system() == "Windows":
         tshark_path = r"C:\Program Files\Wireshark"
     if input_format == "pcapng":
-        list1 = get_from_cap_file(filename=trace_file, tshark_path=tshark_path)
+        list1 = get_from_cap_file(filename=trace_file, tshark_path=tshark_path, wireshark_filter=wireshark_filter)
     elif input_format == "json":
         list1 = get_sip_from_json_file(filename=trace_file)
     else:
@@ -301,7 +325,7 @@ def check_in_trace(*conditions_list, check_trace, input_format="pcapng", tshark_
                                 continue
                         elif sdpline.endswith(" line"):
                             line_type = sdpline[0]
-                            if not re.search(line_type+"=.*"+conditions["sdp"][sdpline], msg.body, re.IGNORECASE):
+                            if not re.search(line_type + "=.*" + conditions["sdp"][sdpline], msg.body, re.IGNORECASE):
                                 match = False
                                 continue
 
@@ -348,7 +372,8 @@ def check_in_trace(*conditions_list, check_trace, input_format="pcapng", tshark_
     return result
 
 
-def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input_format="pcapng", tshark_path=None, tshark_filter=None):
+def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input_format="pcapng", tshark_path=None,
+                    tshark_filter=None):
     if not tshark_path and platform.system() == "Windows":
         tshark_path = r"C:\Program Files\Wireshark"
     if input_format == "json":
@@ -371,10 +396,12 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
         transport_layer = frame_protocols.split(":")[3]
         for application in applications:
             if application in j_msg["_source"]["layers"]:
-                src_addr = "{:<15}:{:>5}".format(j_msg["_source"]["layers"][ip_layer][ip_layer+".src"],
-                                          j_msg["_source"]["layers"][transport_layer][transport_layer + ".srcport"])
+                src_addr = "{:<15}:{:>5}".format(j_msg["_source"]["layers"][ip_layer][ip_layer + ".src"],
+                                                 j_msg["_source"]["layers"][transport_layer][
+                                                     transport_layer + ".srcport"])
                 dst_addr = "{:<15}:{:>5}".format(j_msg["_source"]["layers"][ip_layer][ip_layer + ".dst"],
-                                          j_msg["_source"]["layers"][transport_layer][transport_layer + ".dstport"])
+                                                 j_msg["_source"]["layers"][transport_layer][
+                                                     transport_layer + ".dstport"])
                 if tests and application == "sip":
                     try:
                         msg_raw = assemble_message_from_json(j_msg, appl=application)
