@@ -3,10 +3,29 @@ import pprint
 from datetime import datetime
 from os import chdir, listdir, path
 import sys
+from string import ascii_uppercase
 sys.path.append("..")
 sys.path.append(path.join("..", ".."))
 from tshark_tools.lib import get_msg_list_from_file, msg_filter, make_sip_message_template, summarize_trace
 from sip.SipParser import buildMessage
+
+
+def make_sub(i):
+    max_letters = len(ascii_uppercase)
+    numbering = str(int(i / max_letters))
+    if numbering == "0":
+        numbering = ""
+    suffix = ascii_uppercase[i % max_letters] + numbering
+    return "SUB_" + suffix
+
+
+def get_sub(addr, addr_dict):
+    if addr in addr_dict:
+        return addr_dict[addr]
+    else:
+        sub = make_sub(len(addr_dict) + 1)
+        addr_dict[addr] = sub
+        return sub
 
 
 def describe(tracefile, filters, wireshark_filter=None, tshark_path=None):
@@ -21,17 +40,21 @@ def describe(tracefile, filters, wireshark_filter=None, tshark_path=None):
     :return: A pyssimist testcase
     """
     tc_data = "tc_data.py"
+    test_py = "test.py"
     if tracefile.endswith("json"):
         i_format = "json"
     else:
         i_format = "pcapng"
     count = 0
     subs = {}
+    test_lines = "from tc_data import tc_message\n"
     test_data = {}
     summary = summarize_trace(tracefile, input_format=i_format, tshark_filter=wireshark_filter)
     for transport in summary["sip"]:
         if isinstance(summary["sip"][transport], list):
             for time_epoch, fromaddr, toaddr, message, expand in summary["sip"][transport]:
+                a = get_sub(fromaddr, subs)
+                b = get_sub(toaddr, subs)
                 if "Call-ID" not in filters:
                     filters["Call-ID"] = []
                 key = message.get_status_or_method().split()[0] + "_" + str(count)
@@ -43,9 +66,14 @@ def describe(tracefile, filters, wireshark_filter=None, tshark_path=None):
                 if msg_template not in test_data.values():
                     test_data[key] = msg_template
                     count += 1
+                test_lines += "{}.send({}, tc_message['{}'])\n".format(a, b, key)
+                test_lines += "{}.wait_for_message('{}')\n".format(b, message.get_status_or_method())
 
     with open(tc_data, "w") as sip_trace:
+        sip_trace.write("tc_message = \\\n")
         sip_trace.write(pprint.pformat(test_data, width=200))
+    with open(test_py, "w") as sip_test:
+        sip_test.write(test_lines)
 
 
 def GetArgs():
