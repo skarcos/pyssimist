@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     Test1 = {"Headers": {"From": "302200880895"}
              }
-    Test2 = {"Message": "404 Not Found"
+    Test2 = {"Message": "480"
              }
     # check_in_trace(TestKat1, TestKat2, check_trace="bcf_e_selective.pcap")
 

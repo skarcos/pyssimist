@@ -79,7 +79,7 @@ def open_cap_file(filename, tshark_path, tshark_filter=None):
         filter = "-Y \"{}\"".format(tshark_filter)
     else:
         filter = ""
-    cmd = f"{tshark} -r {filename} {filter}  -T json > " + outfile
+    cmd = "{} -r {} {}  -T json > {}".format(tshark, filename, filter, outfile)
     print(cmd)
     out, err = sb.Popen(cmd, shell=True, stdout=sb.PIPE, stderr=sb.PIPE).communicate()
     if out:
@@ -111,7 +111,7 @@ def get_sip_from_json_file(filename):
     :param filename:  the name of file (json content)
     :return: a list of messages as a list of strings
     """
-    with open(filename, "rb") as j_file:
+    with open(filename, "r") as j_file:
         j_obj = json.load(j_file)
     result = []
     for j_msg in j_obj:
@@ -126,16 +126,20 @@ def get_sip_from_json_file(filename):
 def assemble_message_from_json(j_msg, appl):
     if appl == "sip":
         this_msg = ""
+        header_d = j_msg["_source"]["layers"]["sip"]
+        if isinstance(header_d, dict):
+            if "sip.Request-Line" in header_d.keys():
+                this_msg += header_d["sip.Request-Line"]
 
-        if "sip.Request-Line" in j_msg["_source"]["layers"]["sip"].keys():
-            this_msg += j_msg["_source"]["layers"]["sip"]["sip.Request-Line"]
+            elif "sip.Status-Line" in header_d.keys():
+                this_msg += header_d["sip.Status-Line"]
 
-        elif "sip.Status-Line" in j_msg["_source"]["layers"]["sip"].keys():
-            this_msg += j_msg["_source"]["layers"]["sip"]["sip.Status-Line"]
-
-        this_msg += '\r\n'
-        # this seems to include the body as well, at least in trace with notify messages with xml bodies
-        this_msg += j_msg["_source"]["layers"]["sip"]["sip.msg_hdr"]
+            this_msg += '\r\n'
+            # this seems to include the body as well, at least in trace with notify messages with xml bodies
+            this_msg += header_d["sip.msg_hdr"]
+        else:
+            print("Error parsing sip message with contents:")
+            print("\n{}\n".format(header_d))
 
     elif appl == "http":
         for key in j_msg["_source"]["layers"]["http"]:
@@ -335,7 +339,7 @@ def check_in_trace(*conditions_list, check_trace, input_format="pcapng", tshark_
                             if not re.search(conditions["sdp"]["any"], msg.body, re.IGNORECASE):
                                 match = False
                                 continue
-                        elif sdpline.endswith(" line"):
+                        elif sdpline.endswith("_line"):
                             line_type = sdpline[0]
                             if not re.search(line_type + "=.*" + conditions["sdp"][sdpline], msg.body, re.IGNORECASE):
                                 match = False
@@ -389,10 +393,10 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
     if not tshark_path and platform.system() == "Windows":
         tshark_path = r"C:\Program Files\Wireshark"
     if input_format == "json":
-        with open(filename, "rb") as j_file:
+        with open(filename, "r") as j_file:
             j_obj = json.load(j_file)
     elif input_format == "pcapng":
-        with open(open_cap_file(filename, tshark_path, tshark_filter), "rb") as j_file:
+        with open(open_cap_file(filename, tshark_path, tshark_filter), "r") as j_file:
             j_obj = json.load(j_file)
     else:
         print("Invalid input file type: {}. Supported formats are pcapng and json".format(input_format))
@@ -426,7 +430,7 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
                             expand = True
                         result[application].setdefault("{}:{}".format(ip_layer, transport_layer), []) \
                             .append((time_epoch, src_addr, dst_addr, msg_obj, expand))
-                    except KeyError:
+                    except:
                         print("Unable to parse:")
                         pprint(j_msg)
                 # result[application]["stream_count"] = len(result[application][ip_layer+":"+transport_layer])
