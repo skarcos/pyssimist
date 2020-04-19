@@ -59,6 +59,8 @@ class Application:
         ttk.Entry(self.command_frame, textvariable=self.wireshark).pack()
         self.run_button = ttk.Button(self.command_frame, text="Run", command=self.analyze_in_thread)
         self.run_button.pack(side=tk.BOTTOM)
+        self.clear_button = ttk.Button(self.command_frame, text="Clear", command=self.clear_filters)
+        self.clear_button.pack(side=tk.BOTTOM)
 
         filter_buttons_frame = ttk.Frame(self.command_frame)
         filter_buttons_frame.pack()
@@ -76,6 +78,16 @@ class Application:
                                                                       ("json files", "*.json"),
                                                                       ("all files", "*.*")))
         self.file_selected.configure(text=self.tests["Filename"])
+
+    def clear_filters(self):
+        self.tests_count = 0
+        if "Filename" in self.tests:
+            self.tests = {"Filename": self.tests["Filename"]}
+        else:
+            self.tests = {}
+        filters = self.filters_frame.children
+        for child_frame in filters:
+            filters[child_frame].pack_forget()
 
     def add_header_filter(self):
         filter_frame = ttk.LabelFrame(self.filters_frame, text="Header criteria")
