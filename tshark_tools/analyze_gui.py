@@ -130,23 +130,28 @@ class Application:
         return filter_frame
 
     def add_headers(self, frame, test_id):
-        def add_header():
-            def set_header_values(a, b, c):
-                self.import_filters.delete(1.0, tk.END)
-                self.tests["Test_header_%d" % test_id]["Headers"] = {}
+        entries = []
+
+        def set_header_values(a, b, c):
+            self.import_filters.delete(1.0, tk.END)
+            self.tests["Test_header_%d" % test_id]["Headers"] = {}
+            for header, header_text in entries:
                 if header.get():
                     self.tests["Test_header_%d" % test_id]["Headers"][header.get()] = header_text.get()
 
+        def add_header():
             header = tk.StringVar()
             header_text = tk.StringVar()
             header.trace("w", set_header_values)
             header_text.trace("w", set_header_values)
+            entries.append((header, header_text))
             ttk.Label(frame, text="Header:").pack()
             ttk.Entry(frame, textvariable=header).pack()
             ttk.Label(frame, text="Contains:").pack()
             ttk.Entry(frame, textvariable=header_text).pack()
 
         def set_request_value(a, b, c):
+            self.import_filters.delete(1.0, tk.END)
             self.tests["Test_header_%d" % test_id]["Message"] = request.get()
 
         request = tk.StringVar()
@@ -158,26 +163,31 @@ class Application:
         add_header()
 
     def add_sdp(self, frame, test_id):
-        def add_sdp_():
-            def set_sdp_values(a, b, c):
-                self.import_filters.delete(1.0, tk.END)
-                self.tests["Test_sdp_%d" % test_id]["sdp"] = {}
+        entries = []
+
+        def set_sdp_values(a, b, c):
+            self.import_filters.delete(1.0, tk.END)
+            self.tests["Test_sdp_%d" % test_id]["sdp"] = {}
+            for header, header_text in entries:
                 sdp_line = header.get()
                 if sdp_line:
                     if len(sdp_line) == 1:
                         sdp_line = sdp_line + "_line"
                     self.tests["Test_sdp_%d" % test_id]["sdp"][sdp_line] = header_text.get()
 
+        def add_sdp_():
             header = tk.StringVar()
             header_text = tk.StringVar()
             header.trace("w", set_sdp_values)
             header_text.trace("w", set_sdp_values)
+            entries.append((header, header_text))
             ttk.Label(frame, text="Line(o,a,v...):").pack()
             ttk.Entry(frame, textvariable=header).pack()
             ttk.Label(frame, text="Contains:").pack()
             ttk.Entry(frame, textvariable=header_text).pack()
 
         def set_sdp_includes_value(a, b, c):
+            self.import_filters.delete(1.0, tk.END)
             self.tests["Test_sdp_%d" % test_id]["Message"] = sdp_includes.get()
 
         sdp_includes = tk.StringVar()
@@ -189,10 +199,12 @@ class Application:
         add_sdp_()
 
     def add_xml(self, frame, test_id):
-        def add_xml_():
-            def set_xml_values(a, b, c):
-                self.import_filters.delete(1.0, tk.END)
-                self.tests["Test_xml_%d" % test_id]["xml"] = {}
+        entries = []
+
+        def set_xml_values(a, b, c):
+            self.import_filters.delete(1.0, tk.END)
+            self.tests["Test_xml_%d" % test_id]["xml"] = {}
+            for tag, tag_text, attr, attr_text in entries:
                 xml_tag = tag.get()
                 xml_attr = attr.get()
                 xml_value = ""
@@ -203,6 +215,7 @@ class Application:
                     attr_value = "{} {} attr".format(xml_tag, xml_attr)
                     self.tests["Test_xml_%d" % test_id]["xml"][attr_value] = attr_text.get()
 
+        def add_xml_():
             tag = tk.StringVar()
             attr = tk.StringVar()
             tag_text = tk.StringVar()
@@ -211,6 +224,7 @@ class Application:
             tag_text.trace("w", set_xml_values)
             attr.trace("w", set_xml_values)
             attr_text.trace("w", set_xml_values)
+            entries.append((tag, tag_text, attr, attr_text))
             ttk.Label(frame, text="XML label").pack()
             ttk.Entry(frame, textvariable=tag).pack()
             ttk.Label(frame, text="Contains in text:").pack()
@@ -221,6 +235,7 @@ class Application:
             ttk.Entry(frame, textvariable=attr_text).pack()
 
         def set_xml_includes_value(a, b, c):
+            self.import_filters.delete(1.0, tk.END)
             self.tests["Test_xml_%d" % test_id]["Message"] = xml_includes.get()
 
         xml_includes = tk.StringVar()
