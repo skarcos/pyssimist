@@ -9,7 +9,7 @@ sys.path.append(path.join("..", ".."))
 from tshark_tools.lib import summarize_trace
 
 
-def analyze(tracefile, *criteria, wireshark_filter=None):
+def analyze(tracefile, *criteria, hide_unmatched=False, wireshark_filter=None):
     outfile = tracefile.rsplit(".", 1)[0]+".txt"
     if tracefile.endswith("json"):
         i_format = "json"
@@ -39,7 +39,8 @@ def analyze(tracefile, *criteria, wireshark_filter=None):
                 call_number = calls.index(callid) + 1
                 m_lines = message.contents().split("\r\n")
                 o_line = "{} | Call#{:0>4}: {:20} {:-^14}> {:20} | {}\n".format(timestamp, call_number, fromaddr, transport, toaddr, m_lines[0])
-                output += o_line
+                if expand or not hide_unmatched:
+                    output += o_line
                 if expand:
                     for m_line in m_lines[1:]:
                         output += ("{:" + str(len(o_line.rsplit("|", 1)[0])+2) + "}{}\n").format(" ", m_line)

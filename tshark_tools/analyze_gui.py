@@ -1,5 +1,7 @@
 import os
 import sys
+import webbrowser
+import ast
 from os import path
 
 sys.path.append("..")
@@ -32,6 +34,7 @@ class Application:
 
         style = ttk.Style()
         style.configure("help_style.Label", font=("Consolas", 9))
+        style.configure("hyperlink.Label", foreground="blue", font=("Time", 9, "underline"))
 
         help_frame = ttk.Frame(self.master)
         help_frame.pack(side=tk.TOP)
@@ -41,22 +44,31 @@ class Application:
         other_frames = ttk.Frame(self.master)
         other_frames.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
 
-        self.current_filter_frame = ttk.LabelFrame(other_frames, text="Current filter", width=self.width/3.0)
+        self.current_filter_frame = ttk.LabelFrame(other_frames, text="Import filter", width=self.width/3.0)
         self.current_filter_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         filter_preview = tk.StringVar()
-        ttk.Label(self.current_filter_frame, textvariable=filter_preview, style="help_style.Label").pack()
-        ttk.Button(self.current_filter_frame, text="Preview", command=lambda: filter_preview.set(pformat(self.tests))).pack()
+        #ttk.Label(self.current_filter_frame, textvariable=filter_preview, style="help_style.Label").pack()
+        self.import_filters = tk.Text(self.current_filter_frame, width=50, height=10, font=("Consolas", 9))
+        self.import_filters.pack()
+        #ttk.Button(self.current_filter_frame, text="Load Current", command=lambda: filter_preview.set(pformat(self.tests))).pack()
+        ttk.Button(self.current_filter_frame, text="Load Current", command=self.load_current).pack()
         self.progress_bar = ttk.Progressbar(self.current_filter_frame, mode="indeterminate")
 
         self.command_frame = ttk.Frame(other_frames, width=self.width/3.0)
         self.command_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.wireshark = tk.StringVar(value="")
+        self.wireshark = tk.StringVar(value="sip||mgcp")
         ttk.Label(self.command_frame, text="Trace file selected:").pack()
         self.file_selected = ttk.Label(self.command_frame, text="No file selected")
         self.file_selected.pack()
         ttk.Button(self.command_frame, text="Select File", command=self.file_dialog).pack()
-        ttk.Label(self.command_frame, text="Wireshark filter").pack()
+        doc_link = ttk.Label(self.command_frame, style="hyperlink.Label", text="Wireshark Display filter:")
+        doc_link.bind("<Button-1>", lambda e: webbrowser.open_new("https://wiki.wireshark.org/DisplayFilters"))
+        doc_link.pack()
         ttk.Entry(self.command_frame, textvariable=self.wireshark).pack()
+
+        self.hide_unmatched = tk.BooleanVar(value=False)
+        ttk.Radiobutton(self.command_frame, text="Hide unmatched", value=True, variable=self.hide_unmatched).pack()
+        ttk.Radiobutton(self.command_frame, text="Collapse unmatched", value=False, variable=self.hide_unmatched).pack()
         self.run_button = ttk.Button(self.command_frame, text="Run", command=self.analyze_in_thread)
         self.run_button.pack(side=tk.BOTTOM)
         self.clear_button = ttk.Button(self.command_frame, text="Clear", command=self.clear_filters)
@@ -64,12 +76,16 @@ class Application:
 
         filter_buttons_frame = ttk.Frame(self.command_frame)
         filter_buttons_frame.pack()
-        ttk.Button(filter_buttons_frame, text="Add Header Filter", command=self.add_header_filter).pack(side=tk.LEFT)
-        ttk.Button(filter_buttons_frame, text="Add SDP Filter", command=self.add_sdp_filter).pack(side=tk.LEFT)
-        ttk.Button(filter_buttons_frame, text="Add XML Filter", command=self.add_xml_filter).pack(side=tk.LEFT)
+        ttk.Button(filter_buttons_frame, text="Add Header Filter (OR)", command=self.add_header_filter).pack(side=tk.LEFT)
+        ttk.Button(filter_buttons_frame, text="Add SDP Filter (OR)", command=self.add_sdp_filter).pack(side=tk.LEFT)
+        ttk.Button(filter_buttons_frame, text="Add XML Filter (OR)", command=self.add_xml_filter).pack(side=tk.LEFT)
 
         self.filters_frame = ttk.Frame(other_frames, width=self.width/3.0)
         self.filters_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    def load_current(self):
+        self.import_filters.delete(1.0, tk.END)
+        self.import_filters.insert(1.0, pformat(self.tests))
 
     def file_dialog(self):
         self.tests["Filename"] = filedialog.askopenfilename(initialdir=os.getcwd(),
@@ -116,6 +132,7 @@ class Application:
     def add_headers(self, frame, test_id):
         def add_header():
             def set_header_values(a, b, c):
+                self.import_filters.delete(1.0, tk.END)
                 self.tests["Test_header_%d" % test_id]["Headers"] = {}
                 if header.get():
                     self.tests["Test_header_%d" % test_id]["Headers"][header.get()] = header_text.get()
@@ -137,12 +154,13 @@ class Application:
         self.tests["Test_header_%d" % test_id]["Headers"] = {}
         ttk.Label(frame, text="Msg type(empty=any):").pack()
         ttk.Entry(frame, textvariable=request).pack()
-        ttk.Button(frame, text="Add header filter", command=add_header).pack()
+        ttk.Button(frame, text="Add header filter (AND)", command=add_header).pack()
         add_header()
 
     def add_sdp(self, frame, test_id):
         def add_sdp_():
             def set_sdp_values(a, b, c):
+                self.import_filters.delete(1.0, tk.END)
                 self.tests["Test_sdp_%d" % test_id]["sdp"] = {}
                 sdp_line = header.get()
                 if sdp_line:
@@ -167,12 +185,13 @@ class Application:
         self.tests["Test_sdp_%d" % test_id]["sdp"] = {}
         ttk.Label(frame, text="Msg type(empty=any):").pack()
         ttk.Entry(frame, textvariable=sdp_includes).pack()
-        ttk.Button(frame, text="Add sdp filter", command=add_sdp_).pack()
+        ttk.Button(frame, text="Add sdp filter (AND)", command=add_sdp_).pack()
         add_sdp_()
 
     def add_xml(self, frame, test_id):
         def add_xml_():
             def set_xml_values(a, b, c):
+                self.import_filters.delete(1.0, tk.END)
                 self.tests["Test_xml_%d" % test_id]["xml"] = {}
                 xml_tag = tag.get()
                 xml_attr = attr.get()
@@ -209,7 +228,7 @@ class Application:
         self.tests["Test_xml_%d" % test_id]["xml"] = {}
         ttk.Label(frame, text="Msg type(empty=any):").pack()
         ttk.Entry(frame, textvariable=xml_includes).pack()
-        ttk.Button(frame, text="Add xml filter", command=add_xml_).pack()
+        ttk.Button(frame, text="Add xml filter (AND)", command=add_xml_).pack()
         add_xml_()
 
     def start(self):
@@ -234,8 +253,12 @@ class Application:
             self.master.update()
 
     def analyze(self):
-        filters = [self.tests[test] for test in self.tests if test.startswith("Test")]
-        file_generated = analyze(self.tests["Filename"], *filters, wireshark_filter=self.wireshark.get())
+        tests = self.tests
+        imported_tests = self.import_filters.get(1.0, tk.END).strip()
+        if imported_tests:
+            tests = ast.literal_eval(imported_tests)
+        filters = [tests[test] for test in tests if test.startswith("Test")]
+        file_generated = analyze(self.tests["Filename"], *filters, hide_unmatched=self.hide_unmatched.get(), wireshark_filter=self.wireshark.get())
         messagebox.showinfo(title="Trace analyzed", message="Output filename: %s" % file_generated)
 
 
