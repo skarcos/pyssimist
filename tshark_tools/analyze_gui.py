@@ -7,7 +7,7 @@ from os import path
 sys.path.append("..")
 sys.path.append(path.join("..", ".."))
 from tshark_tools.diff import analyze
-from tshark_tools.lib import check_in_trace
+from tshark_tools.lib import check_in_trace, group_continuous_network_traces
 import tkinter as tk
 import tkinter.ttk as ttk
 from tkinter import filedialog, messagebox
@@ -90,10 +90,14 @@ class Application:
     def file_dialog(self):
         self.tests["Filename"] = filedialog.askopenfilename(initialdir=os.getcwd(),
                                                             title="Select A File",
-                                                            filetype=(("wireshark files", "*.cap *.pcap *.pcapng"),
-                                                                      ("json files", "*.json"),
-                                                                      ("all files", "*.*")))
-        self.file_selected.configure(text=self.tests["Filename"])
+                                                            filetypes=(("wireshark files", "*.cap *.pcap *.pcapng"),
+                                                                       ("json files", "*.json"),
+                                                                       ("all files", "*.*")),
+                                                            multiple=True)
+        if isinstance(self.tests["Filename"], str) or len(self.tests["Filename"]) == 1:
+            self.file_selected.configure(text=self.tests["Filename"])
+        else:
+            self.file_selected.configure(text="Mulitple Selection")
 
     def clear_filters(self):
         self.tests_count = 0
@@ -273,8 +277,17 @@ class Application:
         if imported_tests:
             tests = ast.literal_eval(imported_tests)
         filters = [tests[test] for test in tests if test.startswith("Test")]
-        file_generated = analyze(self.tests["Filename"], *filters, hide_unmatched=self.hide_unmatched.get(), wireshark_filter=self.wireshark.get())
-        messagebox.showinfo(title="Trace analyzed", message="Output filename: %s" % file_generated)
+        if isinstance(self.tests["Filename"], str):
+            file_generated = analyze(self.tests["Filename"], *filters, hide_unmatched=self.hide_unmatched.get(),
+                                     wireshark_filter=self.wireshark.get())
+            messagebox.showinfo(title="Trace analyzed", message="Output filename: %s" % file_generated)
+        else:
+            file_groups = group_continuous_network_traces(self.tests["Filename"])
+            files_generated = ""
+            for group in file_groups:
+                files_generated += analyze(file_groups[group], *filters, hide_unmatched=self.hide_unmatched.get(),
+                                           wireshark_filter=self.wireshark.get()) + "\n"
+            messagebox.showinfo(title="Trace analyzed", message="Output filenames: %s" % files_generated)
 
 
 if __name__ == "__main__":

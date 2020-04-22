@@ -437,3 +437,29 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
                 result[application]["count"] += 1
 
     return result
+
+
+def group_continuous_network_traces(file_list, cont_expr=r"(.*)_\d+_\d{8,20}\.(.*)"):
+    """Example filename
+    <prefix>_00001_20200422141132.<suffix>
+
+    These files are automatically created when capturing wireshark traces with -b
+
+    :file_list: A tuple of filenames or a filename
+    :return: A dictionary that groups together files with common prefix and suffix.
+            If just one filename is given, return {filename: filename}
+    """
+    if isinstance(file_list, str):
+        return {file_list: file_list}
+    file_groups = {}
+    for filename in file_list:
+        matched = re.match(cont_expr, filename)
+        if matched:
+            file_group = matched.group(1) + "NNNNN_DDDDDDTTTTTT." + matched.group(2)
+            file_groups.setdefault(file_group, []).append(filename)
+        else:
+            file_groups[filename] = filename
+    for group in file_groups:
+        if isinstance(file_groups[group], list):
+            file_groups[group].sort()
+    return file_groups
