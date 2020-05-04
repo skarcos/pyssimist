@@ -389,7 +389,7 @@ def check_in_trace(*conditions_list, check_trace, input_format="pcapng", tshark_
 
 
 def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input_format="pcapng", tshark_path=None,
-                    tshark_filter=None):
+                    tshark_filter=None, delete_json=True):
     if not tshark_path and platform.system() == "Windows":
         tshark_path = r"C:\Program Files\Wireshark"
     if input_format == "json":
@@ -401,6 +401,8 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
     else:
         print("Invalid input file type: {}. Supported formats are pcapng and json".format(input_format))
         return None
+    if delete_json:
+        os.remove(filename)
     result = {}
     for application in applications:
         result[application] = {"count": 0}
