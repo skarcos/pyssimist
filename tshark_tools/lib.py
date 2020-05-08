@@ -396,13 +396,14 @@ def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input
         with open(filename, "r") as j_file:
             j_obj = json.load(j_file)
     elif input_format == "pcapng":
-        with open(open_cap_file(filename, tshark_path, tshark_filter), "r") as j_file:
+        temp_file = open_cap_file(filename, tshark_path, tshark_filter)
+        with open(temp_file, "r") as j_file:
             j_obj = json.load(j_file)
+        if delete_json:
+            os.remove(temp_file)
     else:
         print("Invalid input file type: {}. Supported formats are pcapng and json".format(input_format))
         return None
-    if delete_json:
-        os.remove(filename)
     result = {}
     for application in applications:
         result[application] = {"count": 0}
