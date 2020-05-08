@@ -18,8 +18,9 @@ def analyze(tracefiles, *criteria, hide_unmatched=False, wireshark_filter=None):
         output += "\n"
     output += "\n"
     outfile = ""
+    calls = []
     for tracefile in tracefiles:
-        output += "\nTraceFile: " + tracefile +"\n"
+        output += "\nTraceFile: " + tracefile + "\n"
         if tracefile.endswith("json"):
             i_format = "json"
         else:
@@ -27,7 +28,6 @@ def analyze(tracefiles, *criteria, hide_unmatched=False, wireshark_filter=None):
         print(criteria)
         summary = summarize_trace(tracefile, *criteria, input_format=i_format, tshark_filter=wireshark_filter)
 
-        calls = []
         for transport in summary["sip"]:
             if isinstance(summary["sip"][transport], list):
                 for time_epoch, fromaddr, toaddr, message, expand in summary["sip"][transport]:
