@@ -32,6 +32,7 @@ class CstaEndpoint(SipEndpoint):
         self.last_sent_csta_message = None
         self.parameters["deviceID"] = None
         self.parameters["callID"] = None
+        self.waitForCstaMessage = self.wait_for_csta_message  # compatibility alias
 
     def sip_connect(self, local_address, destination_address, protocol="tcp"):
         """ Wrap SipEndpoint.connect with a different name """
@@ -105,7 +106,8 @@ class CstaEndpoint(SipEndpoint):
 
     def wait_for_csta_events(self, csta_link, assert_leg=None):
         """ Waits for CSTA messages until the CSTA link is not valid """
-
+        if not csta_link:
+            csta_link = self.csta_links[0]
         if assert_leg in ("originator", "initiator", "A", "Aside", "caller"):
             assert_message_queue = ["ServiceInitiatedEvent", "OriginatedEvent", "DeliveredEvent", "EstablishedEvent",
                                     "ConnectionClearedEvent"]
@@ -167,17 +169,18 @@ class CstaEndpoint(SipEndpoint):
         self.csta_links[0].send(m.contents())
         return m
 
-    def waitForCstaMessage(self, message_type, ignore_messages=(), new_dialog=False):
+    def wait_for_csta_message(self, message_type, ignore_messages=(), new_dialog=False, timeout=5.0):
         """
         Wait for CSTA message
         :param message_type: The message to wait for
         :param ignore_messages: Messages to ignore
         :param new_dialog: If False, the incoming session ID must be the same as the one of the message we last sent (same dialog)
+        :param timeout: Defined timeout in seconds.
         :return: the CstaMessage received
         """
         inmessage = None
         while not inmessage or inmessage.event in ignore_messages:
-            in_bytes = self.csta_links[0].waitForCstaData()
+            in_bytes = self.csta_links[0].waitForCstaData(timeout=timeout)
             inmessage = parseBytes_csta(in_bytes)
         assert inmessage.event == message_type, \
             '{}: Got "{}" while expecting "{}"'.format(self.number, inmessage.event, message_type)

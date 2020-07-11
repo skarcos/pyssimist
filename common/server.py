@@ -7,6 +7,7 @@ import socket
 import threading
 
 import common.client as my_clients
+from csta.CstaEndpoint import CstaEndpoint
 from sip.SipEndpoint import SipEndpoint
 
 
@@ -94,51 +95,38 @@ class SipServer:
         self.server_thread.start()
 
 
-if __name__ == "__main__":
-    from sip import SipEndpoint
-    from sip.messages import message
-    import time
-    HOST, PORT = "localhost", 9999
-    MockSIPTCP = SipServer(HOST, PORT)
-    MockSIPTCP.serve_in_background()
-    A = SipEndpoint.SipEndpoint("121242124")
-    B = MockSIPTCP.sip_endpoint
-    A.connect(("localhost", 6666),
-              (HOST, PORT),
-              "tcp")
-    A.send_new(B, message["Register_1"])
-    time.sleep(2)
-    B.wait_for_message("REGISTER")
-    B.reply(message["200_OK_1"])
-    A.wait_for_message("200 OK")
-    A.send_new(B, message["Invite_SDP_1"])
-    B.wait_for_message("INVITE")
-    B.reply(message["200_OK_SDP_1"])
-    A.wait_for_message("200 OK")
-    B.send(message["Bye_1"])
-    A.wait_for_message("BYE")
-    # unfortunately our server is not a real sip server yet so there may be some
-    # inconsistencies in the dialog elements. Either that or we should make our message pool better
-    last_dialog = A.reply(message["200_OK_1"]).get_dialog()
-    B.wait_for_message("200 OK", dialog=last_dialog)
-    MockSIPTCP.shutdown()
+class CstaServer(SipServer):
+    def __init__(self, ip, port, protocol="tcp"):
+        super().__init__(ip, port, protocol)
+        self.csta_endpoint = CstaEndpoint("PythonCstaServer")
 
-    # def service_connection(self, key, mask):
-    #     sock = key.fileobj
-    #     data = key.data
-    #     if mask & selectors.EVENT_READ:
-    #         # recv_data = sock.recv(1024)  # Should be ready to read
-    #         try:
-    #             inbytes = self.sip_endpoint.link.waitForSipData()
-    #             self.sip_endpoint.message_buffer.append(parseBytes(inbytes))
-    #             print("got")
-    #             print(inbytes.decode("utf-8").split()[0])
-    #             self.sel.unregister(sock)
-    #             # sock.close()
-    #         except my_clients.NoData:
-    #             print("closing connection to", data.addr)
-    #             self.sel.unregister(sock)
-    #             sock.close()
-    #     if mask & selectors.EVENT_WRITE:
-    #         if data.outb:
-    #             self.sip_endpoint.send(data)
+    def accept_wrapper(self, sock):
+        conn, addr = sock.accept()  # Should be ready to read
+        print("accepted connection from", addr)
+        self.make_client(conn, addr)
+        self.csta_endpoint.csta_links.append(self.sip_endpoint.link)
+        self.csta_endpoint.parameters["systemStatus"] = "normal"
+        self.csta_endpoint.parameters["sysStatRegisterID"] = "PythonCstaServer"
+        self.csta_endpoint.send_csta("SystemStatus")
+        self.csta_endpoint.wait_for_csta_message("SystemStatusResponse")
+        self.csta_endpoint.eventid = 0
+        self.csta_endpoint.wait_for_csta_message("SystemRegister")
+        self.csta_endpoint.send_csta("SystemRegisterResponse")
+
+    def make_client(self, sock, addr):
+        local_ip, local_port = sock.getsockname()
+        client = None
+        if self.protocol in ("tcp", "TCP"):
+            client = my_clients.TCPClient(local_ip, local_port)
+        elif self.protocol in ("udp", "UDP"):
+            client = my_clients.UDPClient(local_ip, local_port)
+        elif self.protocol in ("tls", "TLS"):
+            client = my_clients.TLSClient(local_ip, local_port, None)
+        client.rip = addr[0]
+        client.rport = addr[1]
+        self.csta_endpoint.csta_links.append(client)
+        self.csta_endpoint.csta_links[0].socket = sock
+        #        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.csta_endpoint.csta_links[0].sockfile = sock.makefile(mode='rb')
+
+        return client
