@@ -5,9 +5,11 @@ Initial Version: Costas Skarakis 16/2/2020
 import selectors
 import socket
 import threading
+import types
 
 import common.client as my_clients
-from csta.CstaEndpoint import CstaEndpoint
+from csta.CstaApplication import CstaApplication
+from csta.CstaParser import parseBytes
 from sip.SipEndpoint import SipEndpoint
 
 
@@ -35,6 +37,8 @@ class SipServer:
             raise NotImplemented
         self.server_thread = None
         self.sip_endpoint = SipEndpoint("PythonSipServer")
+        self.handlers = {}
+        self.handlers_args = {}
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
@@ -77,8 +81,8 @@ class SipServer:
                 for key, mask in events:
                     if key.data is None:
                         self.accept_wrapper(key.fileobj)
-                    # else:
-                    #     self.service_connection(key, mask)
+                    else:
+                        self.service_connection(key, mask)
             except socket.timeout:
                 continue
 
@@ -94,24 +98,52 @@ class SipServer:
         self.server_thread.daemon = False
         self.server_thread.start()
 
+    def on(self, incoming_message_type, action, args=()):
+        """
+        Define a response action to a trigger received message
+
+        :param incoming_message_type: The trigger message
+        :param action: A function to call when this message is received.
+                    The first argument of this function
+        :param args: Optional positional arguments to pass to action starting from 3rd position
+        """
+        self.handlers[incoming_message_type] = action
+        self.handlers_args[incoming_message_type] = args
+
+    def service_connection(self, key, mask):
+        pass
+
 
 class CstaServer(SipServer):
     def __init__(self, ip, port, protocol="tcp"):
         super().__init__(ip, port, protocol)
-        self.csta_endpoint = CstaEndpoint("PythonCstaServer")
+        self.name = "PythonCstaServer"
+        self.refid = 0
+        self.csta_endpoint = CstaApplication()
+        self.csta_endpoint.parameters = {self.name: {"eventid": 1}}
+        self.send = self.csta_endpoint.send
+        self.wait_for_csta_message = self.csta_endpoint.wait_for_csta_message
+        self.wait_for = self.csta_endpoint.wait_for_csta_message
+        self.on("MonitorStart", self.monitor_user)
+
+    def set_parameter(self, user, key, value):
+        self.csta_endpoint.parameters[user][key] = value
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
         print("accepted connection from", addr)
+        conn.setblocking(False)
+        data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
+        events = selectors.EVENT_READ #| selectors.EVENT_WRITE
+        self.sel.register(conn, events, data=data)
         self.make_client(conn, addr)
-        self.csta_endpoint.csta_links.append(self.sip_endpoint.link)
-        self.csta_endpoint.parameters["systemStatus"] = "normal"
-        self.csta_endpoint.parameters["sysStatRegisterID"] = "PythonCstaServer"
-        self.csta_endpoint.send_csta("SystemStatus")
-        self.csta_endpoint.wait_for_csta_message("SystemStatusResponse")
-        self.csta_endpoint.eventid = 0
-        self.csta_endpoint.wait_for_csta_message("SystemRegister")
-        self.csta_endpoint.send_csta("SystemRegisterResponse")
+        self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
+        self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
+        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatus")
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatusResponse")
+        self.csta_endpoint.parameters[self.name]["eventid"] = 0
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister")
+        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
 
     def make_client(self, sock, addr):
         local_ip, local_port = sock.getsockname()
@@ -124,9 +156,35 @@ class CstaServer(SipServer):
             client = my_clients.TLSClient(local_ip, local_port, None)
         client.rip = addr[0]
         client.rport = addr[1]
-        self.csta_endpoint.csta_links.append(client)
-        self.csta_endpoint.csta_links[0].socket = sock
+        self.csta_endpoint.link = client
+        self.csta_endpoint.link.socket = sock
         #        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.csta_endpoint.csta_links[0].sockfile = sock.makefile(mode='rb')
-
+        self.csta_endpoint.link.sockfile = sock.makefile(mode='rb')
         return client
+
+    def service_connection(self, key, mask):
+        sock = key.fileobj
+        data = key.data
+        if mask & selectors.EVENT_READ:
+            # print("ready to read")
+            inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
+            inmessage = parseBytes(inbytes)
+            self.csta_endpoint.message_buffer.append(inmessage)
+            self.handlers[inmessage.event](self, inmessage, *self.handlers_args[inmessage.event])
+        if mask & selectors.EVENT_WRITE:
+            # print("ready to write")
+            if data.outb:
+                print("echoing", repr(data.outb), "to", data.addr)
+                sent = sock.send(data.outb)  # Should be ready to write
+                data.outb = data.outb[sent:]
+
+    @staticmethod
+    def monitor_user(self, monitor_message):
+        user = monitor_message["deviceObject"]
+        self.csta_endpoint.parameters[user] = {"eventid": 1,
+                                               "deviceID": user,
+                                               "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
+                                               "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
+        self.refid += 1
+        self.wait_for_csta_message(for_user=user, message="MonitorStart")
+        self.send("MonitorStartResponse", from_user=user)

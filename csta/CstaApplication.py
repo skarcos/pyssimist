@@ -69,35 +69,44 @@ class CstaApplication:
     def get_monitored_users(self):
         return list(self.parameters.keys())
 
-    def send(self, from_user, to_user, message_xml_file):
+    def send(self, message, from_user=None, to_user=None):
         """ Send a CSTA message
 
         :param from_user: calling number
         :param to_user: called number
-        :param message_xml_file: This could be a predefined csta message or just the type of the message.
-                               There are already several builtin xml files that are named after the corresponding messages
-                               In order to access them just provide the type of the CSTA message.
-                               There should be a matching filename in csta/xml
+        :param message: This could be a predefined csta message or just the type of the message.
+                       There are already several builtin xml files that are named after the corresponding messages
+                       In order to access them just provide the type of the CSTA message.
+                       There should be a matching filename in csta/xml
 
-                               Example: C.send_csta("MakeCall")
+                       Example: C.send_csta("MakeCall")
         """
-        assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(from_user)
-        self.parameters[from_user]["eventid"] += 1
-        self.parameters[from_user]["callingDevice"] = from_user
-        self.parameters[from_user]["calledDirectoryNumber"] = to_user
-        if message_xml_file.strip().startswith("<?xml"):
-            m = buildMessage(message_xml_file, self.parameters[from_user], self.parameters[from_user]["eventid"])
+        if from_user and message not in ("MonitorStart", "MonitorStart.xml"):
+            assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(from_user)
+            if "Response" not in message:
+                self.parameters[from_user]["eventid"] += 1
+            else:
+                self.parameters[from_user]["eventid"] = self.parameters[from_user]["last_request_eventid"]
+            self.parameters[from_user]["callingDevice"] = from_user
+            self.parameters[from_user]["calledDirectoryNumber"] = to_user
+            params = self.parameters[from_user]
+            if message.endswith("Event"):
+                params["eventid"] = 9999
         else:
-            m = buildMessageFromFile(get_xml(message_xml_file), self.parameters[from_user],
-                                     self.parameters[from_user]["eventid"])
+            params = {"eventid": 1}
+        if message.strip().startswith("<?xml"):
+            m = buildMessage(message, self.parameters[from_user], self.parameters[from_user]["eventid"])
+        else:
+            m = buildMessageFromFile(get_xml(message), params,
+                                     params["eventid"])
         self.link.send(m.contents())
         return m
 
-    def wait_for_csta_message(self, for_user, message_type, ignore_messages=(), new_call=False, timeout=5.0):
+    def wait_for_csta_message(self, for_user, message, ignore_messages=(), new_call=False, timeout=5.0):
         """
         Wait for CSTA message
         :param for_user: The message intended recipient
-        :param message_type: The message to wait for
+        :param message: The message to wait for
         :param ignore_messages: Messages to ignore
         :param new_call: If False, the incoming session ID must be the same as the one of the message we last sent (same dialog)
         :param timeout: Defined timeout in seconds.
@@ -125,18 +134,18 @@ class CstaApplication:
                 inmessage = None
                 continue
 
-            if message_type and \
-                    ((isinstance(message_type, str) and message_type not in inmessage_type) or
-                     (type(message_type) in (list, tuple) and not any([m in inmessage_type for m in message_type]))):
+            if message and \
+                    ((isinstance(message, str) and message not in inmessage_type) or
+                     (type(message) in (list, tuple) and not any([m in inmessage_type for m in message]))):
                 # we have received an unexpected message.
                 raise AssertionError('{}: Got "{}" in {} while expecting "{}". '.format(for_user,
                                                                                         inmessage_type,
                                                                                         inmessage.eventid,
-                                                                                        message_type))
+                                                                                        message))
 
         if inmessage.eventid != 9999 and not new_call:
             assert inmessage.eventid == event_id, \
-                '{}: Wrong event id received: {} \n' \
+                'User {}: Wrong event id received: {} \n' \
                 'Event id expected: {}\n' \
                 '\nMessage received:\n{}\n'.format(for_user,
                                                    inmessage.eventid,
@@ -155,19 +164,24 @@ class CstaApplication:
         msg = None
         for i in range(len(self.message_buffer)):
             message = self.message_buffer[i]
-            device_ID = message["deviceID"]
-            if device_ID == self.parameters[directory_number]["deviceID"]:
+            try:
+                device_ID = message["deviceID"]
+            except AttributeError:
+                device_ID = None
+            if device_ID == self.parameters[directory_number]["deviceID"] or device_ID is None:
                 msg = message
                 self.message_buffer.pop(i)
                 break
         return msg
 
     def update_call_parameters(self, directory_number, inresponse):
-        """ Update our deviceID based on the given incoming CSTA response """
+        """ Update our deviceID based on the given incoming CSTA message """
         try:
+            if not inresponse.event.endswith("Event") and not inresponse.event.endswith("Response"):
+                self.parameters[directory_number]["last_request_eventid"] = inresponse.eventid
             self.parameters[directory_number]["deviceID"] = inresponse["deviceID"]
         except AttributeError:
-            self.parameters[directory_number]["deviceID"] = None
+            self.parameters[directory_number].setdefault("deviceID", None)
 
     def close(self):
         self.link.socket.close()
