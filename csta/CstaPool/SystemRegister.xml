@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <SystemRegister
-  xmlns="http://www.ecma.ch/standards/ecma-323/csta/ed2"
+  xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="
-      http://www.ecma.ch/standards/ecma-323/csta/ed2  file://localhost/X:/ips_bln/long_csta/ecma/system-register.xsd
+      http://www.ecma-international.org/standards/ecma-323/csta/ed4  file://localhost/X:/ips_bln/long_csta/ecma/system-register.xsd
   ">
   <requestTypes>
     <systemStatus>true</systemStatus>

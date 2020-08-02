@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ns3:SnapshotDevice xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4">
+   <ns3:snapshotObject>{user}</ns3:snapshotObject>
+</ns3:SnapshotDevice>

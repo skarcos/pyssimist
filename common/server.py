@@ -125,6 +125,13 @@ class CstaServer(SipServer):
         self.wait_for_csta_message = self.csta_endpoint.wait_for_csta_message
         self.wait_for = self.csta_endpoint.wait_for_csta_message
         self.on("MonitorStart", self.monitor_user)
+        self.on("SystemStatus", self.system_status)
+        self.on("SystemRegister", self.system_register)
+        self.on("SnapshotDevice", self.snapshot_device)
+
+    def on(self, incoming_message_type, action, args=()):
+        super().on(incoming_message_type, action, args)
+        self.csta_endpoint.set_auto_answer(incoming_message_type)
 
     def set_parameter(self, user, key, value):
         self.csta_endpoint.parameters[user][key] = value
@@ -137,13 +144,11 @@ class CstaServer(SipServer):
         events = selectors.EVENT_READ #| selectors.EVENT_WRITE
         self.sel.register(conn, events, data=data)
         self.make_client(conn, addr)
-        self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
+        self.csta_endpoint.parameters[self.name]["systemStatus"] = "enabled"
         self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatus")
         self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatusResponse")
         self.csta_endpoint.parameters[self.name]["eventid"] = 0
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister")
-        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
 
     def make_client(self, sock, addr):
         local_ip, local_port = sock.getsockname()
@@ -186,5 +191,22 @@ class CstaServer(SipServer):
                                                "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
                                                "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
         self.refid += 1
-        self.wait_for_csta_message(for_user=user, message="MonitorStart")
+        self.wait_for_csta_message(for_user=user, message="MonitorStart", new_call=True)
         self.send("MonitorStartResponse", from_user=user)
+
+    @staticmethod
+    def system_register(self, system_register_message):
+        self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister", new_call=True)
+        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
+
+    @staticmethod
+    def system_status(self, system_status_message):
+        self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatus", new_call=True)
+        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatusResponse")
+
+    @staticmethod
+    def snapshot_device(self, snapshot_device_message):
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SnapshotDevice", new_call=True)
+        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SnapshotDeviceResponse")

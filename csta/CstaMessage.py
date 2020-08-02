@@ -3,6 +3,7 @@ Purpose: CSTA message object
 Initial Version: Costas Skarakis 11/11/2018
 """
 import os
+import re
 import xml.etree.ElementTree as ET
 import io
 
@@ -26,18 +27,24 @@ class CstaMessage(object):
         self.namespace = ""
         self.root = self.body.getroot()
         for namespace in ns:
-            # namespace is pair of (name, url)
-            ET.register_namespace(*namespace)
+            if not re.match(r"ns\d+", namespace[0]):
+                # namespace is pair of (name, url)
+                ET.register_namespace(*namespace)
             if namespace[0] == "":
                 # default namespace
                 self.namespace = namespace[1]
-        self.event = self.root.tag.replace("{" + self.namespace + "}", '')
+#        self.event = self.root.tag.replace("{" + self.namespace + "}", '')
+        self.event = re.match(r"({.*})?(.*)", self.root.tag).group(2)
 
     def __getitem__(self, key):
         for tag in self.body.iter():
             element = tag.find(key)
             if element is None:
                 element = tag.find("{" + self.namespace + "}" + key)
+            if element is None:
+                element_search = re.search(key, tag.tag)
+                if element_search:
+                    element = tag
             if element is not None:
                 break
         return element.text

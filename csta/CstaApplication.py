@@ -16,6 +16,7 @@ class CstaApplication:
         self.port = None
         self.link = None
         self.parameters = {}
+        self.auto_answer = []
         self.message_buffer = []
         self.waitForCstaMessage = self.wait_for_csta_message  # compatibility alias
 
@@ -138,10 +139,14 @@ class CstaApplication:
                     ((isinstance(message, str) and message not in inmessage_type) or
                      (type(message) in (list, tuple) and not any([m in inmessage_type for m in message]))):
                 # we have received an unexpected message.
-                raise AssertionError('{}: Got "{}" in {} while expecting "{}". '.format(for_user,
-                                                                                        inmessage_type,
-                                                                                        inmessage.eventid,
-                                                                                        message))
+                if inmessage_type in self.auto_answer:
+                    self.message_buffer.append(inmessage)
+                    inmessage = None
+                else:
+                    raise AssertionError('{}: Got "{}" in {} while expecting "{}". '.format(for_user,
+                                                                                            inmessage_type,
+                                                                                            inmessage.eventid,
+                                                                                            message))
 
         if inmessage.eventid != 9999 and not new_call:
             assert inmessage.eventid == event_id, \
@@ -152,7 +157,12 @@ class CstaApplication:
                                                    event_id,
                                                    inmessage)
             self.update_call_parameters(for_user, inmessage)
+        if new_call:
+            self.update_call_parameters(for_user, inmessage)
         return inmessage
+
+    def set_auto_answer(self, message_type):
+        self.auto_answer.append(message_type)
 
     def get_buffered_message(self, directory_number):
         """
@@ -168,7 +178,7 @@ class CstaApplication:
                 device_ID = message["deviceID"]
             except AttributeError:
                 device_ID = None
-            if device_ID == self.parameters[directory_number]["deviceID"] or device_ID is None:
+            if (device_ID in self.parameters[directory_number] and device_ID == self.parameters[directory_number]["deviceID"]) or device_ID is None:
                 msg = message
                 self.message_buffer.pop(i)
                 break
