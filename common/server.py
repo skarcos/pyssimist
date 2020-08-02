@@ -8,6 +8,7 @@ import threading
 import types
 
 import common.client as my_clients
+from common import util
 from csta.CstaApplication import CstaApplication
 from csta.CstaParser import parseBytes
 from sip.SipEndpoint import SipEndpoint
@@ -128,10 +129,23 @@ class CstaServer(SipServer):
         self.on("SystemStatus", self.system_status)
         self.on("SystemRegister", self.system_register)
         self.on("SnapshotDevice", self.snapshot_device)
+        util.serverThread(self.consume_buffer)
 
     def on(self, incoming_message_type, action, args=()):
         super().on(incoming_message_type, action, args)
         self.csta_endpoint.set_auto_answer(incoming_message_type)
+
+    def consume_buffer(self):
+        """
+        Consumer for buffered messages. May need to add a short sleep to save on CPU resources
+        This method runs on its own thread
+        :return:
+        """
+        while True:
+            if self.csta_endpoint.message_buffer:
+                buffered_message = self.csta_endpoint.message_buffer.pop[0]
+                self.handlers[buffered_message.event](self, buffered_message,
+                                                      *self.handlers_args[buffered_message.event])
 
     def set_parameter(self, user, key, value):
         self.csta_endpoint.parameters[user][key] = value
