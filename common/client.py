@@ -82,9 +82,10 @@ class TCPClient(object):
             while len(data) < datalength:
                 data += self.socket.recv(datalength - len(data))
             # print('message:\n{}\nsize{}\n'.format(data,datalength))
-            debug("Received on port {}:\n\n".format(self.port) + (header + data).decode("utf8",
-                                                                                        "backslashreplace").replace(
-                "\r\n", "\n"))
+            debug(
+                "Received on port {} message of length {}:\n\n".format(self.port, datalength) + (header + data).decode(
+                    "utf8",
+                    "backslashreplace").replace("\r\n", "\n"))
         finally:
             self.socket.settimeout(bkp)
         return header + data

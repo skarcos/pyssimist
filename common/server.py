@@ -9,6 +9,7 @@ import types
 
 import common.client as my_clients
 from common import util
+from common.tc_logging import debug
 from csta.CstaApplication import CstaApplication
 from csta.CstaParser import parseBytes
 from sip.SipEndpoint import SipEndpoint
@@ -143,7 +144,7 @@ class CstaServer(SipServer):
         """
         while True:
             if self.csta_endpoint.message_buffer:
-                buffered_message = self.csta_endpoint.message_buffer.pop[0]
+                buffered_message = self.csta_endpoint.message_buffer[0]
                 self.handlers[buffered_message.event](self, buffered_message,
                                                       *self.handlers_args[buffered_message.event])
 
@@ -186,10 +187,13 @@ class CstaServer(SipServer):
         data = key.data
         if mask & selectors.EVENT_READ:
             # print("ready to read")
-            inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
-            inmessage = parseBytes(inbytes)
-            self.csta_endpoint.message_buffer.append(inmessage)
-            self.handlers[inmessage.event](self, inmessage, *self.handlers_args[inmessage.event])
+            try:
+                inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
+                inmessage = parseBytes(inbytes)
+                self.csta_endpoint.message_buffer.append(inmessage)
+                self.handlers[inmessage.event](self, inmessage, *self.handlers_args[inmessage.event])
+            except UnicodeDecodeError:
+                debug("Ignoring malformed data")
         if mask & selectors.EVENT_WRITE:
             # print("ready to write")
             if data.outb:
@@ -205,22 +209,22 @@ class CstaServer(SipServer):
                                                "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
                                                "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
         self.refid += 1
-        self.wait_for_csta_message(for_user=user, message="MonitorStart", new_call=True)
+        self.wait_for_csta_message(for_user=user, message="MonitorStart", new_request=True)
         self.send("MonitorStartResponse", from_user=user)
 
     @staticmethod
     def system_register(self, system_register_message):
         self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister", new_call=True)
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister", new_request=True)
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
 
     @staticmethod
     def system_status(self, system_status_message):
         self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatus", new_call=True)
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatus", new_request=True)
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatusResponse")
 
     @staticmethod
     def snapshot_device(self, snapshot_device_message):
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SnapshotDevice", new_call=True)
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SnapshotDevice", new_request=True)
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SnapshotDeviceResponse")

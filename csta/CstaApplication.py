@@ -103,13 +103,13 @@ class CstaApplication:
         self.link.send(m.contents())
         return m
 
-    def wait_for_csta_message(self, for_user, message, ignore_messages=(), new_call=False, timeout=5.0):
+    def wait_for_csta_message(self, for_user, message, ignore_messages=(), new_request=False, timeout=5.0):
         """
         Wait for CSTA message
         :param for_user: The message intended recipient
         :param message: The message to wait for
         :param ignore_messages: Messages to ignore
-        :param new_call: If False, the incoming session ID must be the same as the one of the message we last sent (same dialog)
+        :param new_request: If False, the incoming session ID must be the same as the one of the message we last sent (same dialog)
         :param timeout: Defined timeout in seconds.
         :return: the CstaMessage received
         """
@@ -127,8 +127,13 @@ class CstaApplication:
 
             if not inmessage:
                 # no (more) buffered messages. try the network
-                inbytes = self.link.waitForCstaData(timeout=timeout)
-                inmessage = parseBytes(inbytes)
+                try:
+                    inbytes = self.link.waitForCstaData(timeout=timeout)
+                    inmessage = parseBytes(inbytes)
+                except UnicodeDecodeError:
+                    debug("Ignoring malformed data")
+                    inmessage = None
+                    continue
 
             inmessage_type = inmessage.event
             if inmessage_type in ignore_messages:
@@ -148,7 +153,7 @@ class CstaApplication:
                                                                                             inmessage.eventid,
                                                                                             message))
 
-        if inmessage.eventid != 9999 and not new_call:
+        if inmessage.eventid != 9999 and not new_request:
             assert inmessage.eventid == event_id, \
                 'User {}: Wrong event id received: {} \n' \
                 'Event id expected: {}\n' \
@@ -157,7 +162,7 @@ class CstaApplication:
                                                    event_id,
                                                    inmessage)
             self.update_call_parameters(for_user, inmessage)
-        if new_call:
+        if new_request:
             self.update_call_parameters(for_user, inmessage)
         return inmessage
 

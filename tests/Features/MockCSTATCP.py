@@ -67,7 +67,7 @@ def HandleMakeCall(csta_server, make_call_message, call_duration=1):
 
 def MakeCall(csta_application, userA, userB, call_duration):
     csta_application.send(from_user=userA, to_user=userB, message="MakeCall")
-    csta_application.wait_for_csta_message(for_user=userA, message="MakeCallResponse", new_call=True)
+    csta_application.wait_for_csta_message(for_user=userA, message="MakeCallResponse", new_request=True)
     csta_application.wait_for_csta_message(for_user=userA, message="ServiceInitiatedEvent")
     csta_application.wait_for_csta_message(for_user=userA, message="OriginatedEvent")
     csta_application.wait_for_csta_message(for_user=userA, message="DeliveredEvent")
