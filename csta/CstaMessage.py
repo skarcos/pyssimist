@@ -10,6 +10,24 @@ import io
 xmlpath = os.path.join(os.path.realpath(__file__).replace(os.path.basename(__file__), ''), "CstaPool")
 
 
+def is_response(message):
+    if message.endswith("Response"):
+        return True
+    else:
+        return False
+
+
+def is_request(message):
+    if is_event(message) or is_response(message):
+        return False
+    else:
+        return True
+
+
+def is_event(message):
+    return message.endswith("Event")
+
+
 class CstaMessage(object):
     """
     Representation of a CSTA message
@@ -36,7 +54,17 @@ class CstaMessage(object):
 #        self.event = self.root.tag.replace("{" + self.namespace + "}", '')
         self.event = re.match(r"({.*})?(.*)", self.root.tag).group(2)
 
+    def is_response(self):
+        return is_response(self.event)
+
+    def is_request(self):
+        return is_request(self.event)
+
+    def is_event(self):
+        return is_event(self.event)
+
     def __getitem__(self, key):
+        element = None
         for tag in self.body.iter():
             element = tag.find(key)
             if element is None:
@@ -47,7 +75,10 @@ class CstaMessage(object):
                     element = tag
             if element is not None:
                 break
-        return element.text
+        if element is None:
+            return None
+        else:
+            return element.text
 
     def __setitem__(self, key, value):
         element = self.body.find("{" + self.namespace + "}" + key)

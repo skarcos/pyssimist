@@ -5,13 +5,16 @@ Initial Version: Costas Skarakis 16/2/2020
 import selectors
 import socket
 import threading
+import time
 import types
+from copy import copy
 
 import common.client as my_clients
 from common import util
 from common.tc_logging import debug
 from csta.CstaApplication import CstaApplication
 from csta.CstaParser import parseBytes
+from csta.CstaUser import CstaUser
 from sip.SipEndpoint import SipEndpoint
 
 
@@ -45,10 +48,10 @@ class SipServer:
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
         print("accepted connection from", addr)
-        #conn.setblocking(False)
-        #data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-        #events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        #self.sel.register(conn, events, data=data)
+        # conn.setblocking(False)
+        # data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
+        # events = selectors.EVENT_READ | selectors.EVENT_WRITE
+        # self.sel.register(conn, events, data=data)
         self.make_client(conn, addr)
 
     def make_client(self, sock, addr):
@@ -122,8 +125,9 @@ class CstaServer(SipServer):
         self.name = "PythonCstaServer"
         self.refid = 0
         self.csta_endpoint = CstaApplication()
+        self.user = self.csta_endpoint.new_user(self.name)
+        self.user.parameters["monitorCrossRefID"] = 9999
         self.csta_endpoint.parameters = {self.name: {"eventid": 1}}
-        self.send = self.csta_endpoint.send
         self.wait_for_csta_message = self.csta_endpoint.wait_for_csta_message
         self.wait_for = self.csta_endpoint.wait_for_csta_message
         self.on("MonitorStart", self.monitor_user)
@@ -131,6 +135,20 @@ class CstaServer(SipServer):
         self.on("SystemRegister", self.system_register)
         self.on("SnapshotDevice", self.snapshot_device)
         util.serverThread(self.consume_buffer)
+
+    def send(self, message, to_user, from_user=None):
+        """ We are using the client methods for the server, which make the from_user and to_user
+        terms to have opposite values. We use this method to reverse them and make the code make more sense.
+
+        :param to_user: Will be turned to from_user in CstaApplication.send
+        :param from_user: Will be turned to to_user
+        :param message: The Message type
+        :return: The CstaMessage sent
+        """
+        if isinstance(to_user, CstaUser):
+            return to_user.send(message)
+        else:
+            return self.csta_endpoint.send(from_user=to_user, message=message, to_user=from_user)
 
     def on(self, incoming_message_type, action, args=()):
         super().on(incoming_message_type, action, args)
@@ -144,9 +162,10 @@ class CstaServer(SipServer):
         """
         while True:
             if self.csta_endpoint.message_buffer:
-                buffered_message = self.csta_endpoint.message_buffer[0]
-                self.handlers[buffered_message.event](self, buffered_message,
-                                                      *self.handlers_args[buffered_message.event])
+                for buffered_message in copy(self.csta_endpoint.message_buffer):
+                    self.handlers[buffered_message.event](self, buffered_message,
+                                                          *self.handlers_args[buffered_message.event])
+            time.sleep(0.1)
 
     def set_parameter(self, user, key, value):
         self.csta_endpoint.parameters[user][key] = value
@@ -156,14 +175,14 @@ class CstaServer(SipServer):
         print("accepted connection from", addr)
         conn.setblocking(False)
         data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-        events = selectors.EVENT_READ #| selectors.EVENT_WRITE
+        events = selectors.EVENT_READ  # | selectors.EVENT_WRITE
         self.sel.register(conn, events, data=data)
         self.make_client(conn, addr)
-        self.csta_endpoint.parameters[self.name]["systemStatus"] = "enabled"
-        self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
+        self.user.parameters["systemStatus"] = "enabled"
+        self.user.parameters["sysStatRegisterID"] = self.name
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatus")
         self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatusResponse")
-        self.csta_endpoint.parameters[self.name]["eventid"] = 0
+        self.user.parameters["eventid"] = 0
 
     def make_client(self, sock, addr):
         local_ip, local_port = sock.getsockname()
@@ -191,7 +210,8 @@ class CstaServer(SipServer):
                 inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
                 inmessage = parseBytes(inbytes)
                 self.csta_endpoint.message_buffer.append(inmessage)
-                self.handlers[inmessage.event](self, inmessage, *self.handlers_args[inmessage.event])
+                if inmessage.event in self.handlers:
+                    self.handlers[inmessage.event](self, inmessage, *self.handlers_args[inmessage.event])
             except UnicodeDecodeError:
                 debug("Ignoring malformed data")
         if mask & selectors.EVENT_WRITE:
@@ -201,30 +221,38 @@ class CstaServer(SipServer):
                 sent = sock.send(data.outb)  # Should be ready to write
                 data.outb = data.outb[sent:]
 
+    def get_user(self, directory_number):
+        return self.csta_endpoint.get_user(directory_number)
+
     @staticmethod
     def monitor_user(self, monitor_message):
         user = monitor_message["deviceObject"]
-        self.csta_endpoint.parameters[user] = {"eventid": 1,
-                                               "deviceID": user,
-                                               "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
-                                               "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
+        if not user:
+            debug("Invalid monitor user '{}'. Empty deviceID tag.".format(user))
+            return
+        # self.csta_endpoint.new_user(user).parameters["monitorCrossRefID"] = self.refid
+        self.csta_endpoint.new_user(user).parameters = {"monitorCrossRefID": self.refid,
+                                                        "deviceID": user,
+                                                        "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
+                                                        "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
         self.refid += 1
-        self.wait_for_csta_message(for_user=user, message="MonitorStart", new_request=True)
-        self.send("MonitorStartResponse", from_user=user)
+        self.wait_for_csta_message(for_user=user, message="MonitorStart")
+        self.user.update_incoming_transactions(monitor_message)
+        self.send("MonitorStartResponse", to_user=user)
 
     @staticmethod
     def system_register(self, system_register_message):
         self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister", new_request=True)
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister")
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
 
     @staticmethod
     def system_status(self, system_status_message):
         self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatus", new_request=True)
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatus")
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatusResponse")
 
     @staticmethod
     def snapshot_device(self, snapshot_device_message):
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SnapshotDevice", new_request=True)
+        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SnapshotDevice")
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SnapshotDeviceResponse")

@@ -5,8 +5,9 @@ Initial Version: Costas Skarakis 7/20/2020
 from _socket import timeout
 
 from common.client import TCPClient
-from common.tc_logging import debug
+from common.tc_logging import debug, warning
 from csta.CstaEndpoint import get_xml
+from csta.CstaUser import CstaUser
 from csta.CstaParser import parseBytes, buildMessageFromFile, buildMessage
 
 
@@ -15,6 +16,8 @@ class CstaApplication:
         self.ip = None
         self.port = None
         self.link = None
+        self.min_event_id = 0
+        self.users = {}
         self.parameters = {}
         self.auto_answer = []
         self.message_buffer = []
@@ -47,15 +50,29 @@ class CstaApplication:
         assert reg_resp.event == "SystemRegisterResponse", 'Invalid Response to System Register Request'
         return csta_link
 
+    def new_user(self, directory_number):
+        """ Add a new user to the Application
+        :param directory_number: The users number as a string
+        :return: The CstaUser object created for this user
+        """
+        if directory_number in self.users:
+            warning(directory_number + " already exists")
+            return self.users[directory_number]
+        else:
+            user = CstaUser(directory_number, self)
+            self.users[directory_number] = user
+            return user
+
+    def get_user(self, directory_number):
+        return self.users[directory_number]
+
     def monitor_start(self, directory_number):
         """ Send MonitorStart and add directory number to monitored users"""
-        csta_link = self.link
-        m = buildMessageFromFile(get_xml("MonitorStart.xml"), {"user": directory_number}, eventid=1)
-        csta_link.send(m.contents())
-        in_bytes = csta_link.waitForData()
-        inmessage = parseBytes(in_bytes)
-        assert inmessage.event == "MonitorStartResponse", "Sent:{}  Received:{}".format(m.event, str(inmessage))
-        self.parameters.setdefault(directory_number, {"eventid": 1, "deviceID": None})
+        user = self.get_user(directory_number)
+        user.parameters["user"] = directory_number
+        user.send("MonitorStart")
+        inmessage = user.wait_for_message("MonitorStartResponse")
+        user.parameters["monitorCrossRefID"] = inmessage["monitorCrossRefID"]
 
     # def monitor_stop(self, directory_number):
     #     """ Send MonitorStop and delete directory number from monitored users"""
@@ -68,7 +85,7 @@ class CstaApplication:
     #     self.parameters.pop(directory_number)
 
     def get_monitored_users(self):
-        return list(self.parameters.keys())
+        return list(user for user in self.users if self.get_user(user).parameters["monitorCrossRefID"] is not None)
 
     def send(self, message, from_user=None, to_user=None):
         """ Send a CSTA message
@@ -82,25 +99,22 @@ class CstaApplication:
 
                        Example: C.send_csta("MakeCall")
         """
+        if isinstance(to_user, CstaUser):
+            to_user = to_user.number
+        user = self.users[from_user]
         if from_user and message not in ("MonitorStart", "MonitorStart.xml"):
-            assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(from_user)
-            if "Response" not in message:
-                self.parameters[from_user]["eventid"] += 1
-            else:
-                self.parameters[from_user]["eventid"] = self.parameters[from_user]["last_request_eventid"]
-            self.parameters[from_user]["callingDevice"] = from_user
-            self.parameters[from_user]["calledDirectoryNumber"] = to_user
-            params = self.parameters[from_user]
-            if message.endswith("Event"):
-                params["eventid"] = 9999
-        else:
-            params = {"eventid": 1}
+            assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(
+                from_user)
+        eventid = user.get_transaction_id(message)
+
+        user.set_parameter("callingDevice", from_user)
+        user.set_parameter("calledDirectoryNumber", to_user)
         if message.strip().startswith("<?xml"):
-            m = buildMessage(message, self.parameters[from_user], self.parameters[from_user]["eventid"])
+            m = buildMessage(message, user.parameters, eventid)
         else:
-            m = buildMessageFromFile(get_xml(message), params,
-                                     params["eventid"])
+            m = buildMessageFromFile(get_xml(message), user.parameters, eventid)
         self.link.send(m.contents())
+        user.update_outgoing_transactions(m)
         return m
 
     def wait_for_csta_message(self, for_user, message, ignore_messages=(), new_request=False, timeout=5.0):
@@ -114,7 +128,8 @@ class CstaApplication:
         :return: the CstaMessage received
         """
         inmessage = None
-        event_id = self.parameters[for_user]["eventid"]
+        user = self.users[for_user]
+        # event_id = self.parameters[for_user]["eventid"]
         len_buffer = len(self.message_buffer)
         count = 0
 
@@ -141,29 +156,30 @@ class CstaApplication:
                 continue
 
             if message and \
-                    ((isinstance(message, str) and message not in inmessage_type) or
-                     (type(message) in (list, tuple) and not any([m in inmessage_type for m in message]))):
+                    ((isinstance(message, str) and message != inmessage_type) or
+                     (type(message) in (list, tuple) and not any([m == inmessage_type for m in message])) or
+                     (inmessage["monitorCrossRefID"] and "monitorCrossRefID" in user.parameters and
+                      inmessage["monitorCrossRefID"] != user.parameters["monitorCrossRefID"] and
+                      inmessage_type != "MonitorStartResponse")):
+
                 # we have received an unexpected message.
-                if inmessage_type in self.auto_answer:
+                if inmessage_type in self.auto_answer or inmessage["deviceID"] in self.users:
                     self.message_buffer.append(inmessage)
                     inmessage = None
                 else:
-                    raise AssertionError('{}: Got "{}" in {} while expecting "{}". '.format(for_user,
-                                                                                            inmessage_type,
-                                                                                            inmessage.eventid,
-                                                                                            message))
+                    raise AssertionError('{}: Got "{}" with callID {} and xrefid {} while expecting "{}" with '
+                                         'callID {} and xrefid {}.\n{} '.format(for_user,
+                                                                                inmessage_type,
+                                                                                inmessage["callID"],
+                                                                                inmessage["monitorCrossRefID"],
+                                                                                message,
+                                                                                user.parameters.get("callID", None),
+                                                                                user.parameters.get("monitorCrossRefID",
+                                                                                                    None),
+                                                                                inmessage))
 
-        if inmessage.eventid != 9999 and not new_request:
-            assert inmessage.eventid == event_id, \
-                'User {}: Wrong event id received: {} \n' \
-                'Event id expected: {}\n' \
-                '\nMessage received:\n{}\n'.format(for_user,
-                                                   inmessage.eventid,
-                                                   event_id,
-                                                   inmessage)
-            self.update_call_parameters(for_user, inmessage)
-        if new_request:
-            self.update_call_parameters(for_user, inmessage)
+        # Evaluate the invoke id
+        user.update_incoming_transactions(inmessage)
         return inmessage
 
     def set_auto_answer(self, message_type):
@@ -179,22 +195,25 @@ class CstaApplication:
         msg = None
         for i in range(len(self.message_buffer)):
             message = self.message_buffer[i]
+            user = self.get_user(directory_number)
             try:
                 device_ID = message["deviceID"]
             except AttributeError:
                 device_ID = None
-            if (device_ID in self.parameters[directory_number] and device_ID == self.parameters[directory_number]["deviceID"]) or device_ID is None:
+            if device_ID == user.deviceID or device_ID is None:
                 msg = message
                 self.message_buffer.pop(i)
                 break
         return msg
 
     def update_call_parameters(self, directory_number, inresponse):
-        """ Update our deviceID based on the given incoming CSTA message """
+        """ Update our parameters based on the given incoming CSTA message """
         try:
             if not inresponse.event.endswith("Event") and not inresponse.event.endswith("Response"):
                 self.parameters[directory_number]["last_request_eventid"] = inresponse.eventid
-            self.parameters[directory_number]["deviceID"] = inresponse["deviceID"]
+            for key in "deviceID", "monitorCrossRefID", "callID":
+                if inresponse[key]:
+                    self.parameters[directory_number][key] = inresponse[key]
         except AttributeError:
             self.parameters[directory_number].setdefault("deviceID", None)
 
