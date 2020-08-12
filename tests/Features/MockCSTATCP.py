@@ -2,12 +2,15 @@
 Purpose:
 Initial Version: Costas Skarakis 7/11/2020  
 """
+import threading
+from datetime import datetime
+
 from common.server import CstaServer
 from csta.CstaApplication import CstaApplication
 import time
 
 
-def HandleMakeCall(csta_server, make_call_message, call_duration=1):
+def HandleMakeCall(csta_server, make_call_message, call_duration=10):
     # https://wiki.unify.com/images/3/3e/CSTA_introduction_and_overview.pdf
     userA = csta_server.get_user(make_call_message["callingDevice"])
     userB = csta_server.get_user(make_call_message["calledDirectoryNumber"])
@@ -23,11 +26,13 @@ def HandleMakeCall(csta_server, make_call_message, call_duration=1):
     csta_server.send("ServiceInitiatedEvent", to_user=userA)
 
     # phone A is calling
+    print(userA.number, "is calling")
     userA.set_parameter("callingDevice", userA.number)
     userA.set_parameter("calledDevice", userB.number)
     csta_server.send("OriginatedEvent", to_user=userA)
 
     # phone B is ringing
+    print(userB.number, "is ringing")
     userA.set_parameter("localConnectionInfo", "connected")
     userA.set_parameter("cause", "newCall")
     userA.set_parameter("alertingDevice", userB.number)
@@ -45,6 +50,7 @@ def HandleMakeCall(csta_server, make_call_message, call_duration=1):
     csta_server.send("DeliveredEvent", to_user=userB)
 
     # phone B answers
+    print(userB.number, "answers")
     userA.set_parameter("answeringDevice", userB.number)
     csta_server.send("EstablishedEvent", to_user=userA)
 
@@ -55,7 +61,9 @@ def HandleMakeCall(csta_server, make_call_message, call_duration=1):
     csta_server.send("EstablishedEvent", to_user=userB)
 
     # phone A or B hangs up after call_duration seconds
+    print(userA.number, userB.number, "talk for", call_duration, "seconds")
     time.sleep(call_duration)
+    print(userA.number, "hangs up")
     userA.set_parameter("releasingDevice", userA.number)
     userA.set_parameter("localConnectionInfo", "null")
     csta_server.send("ConnectionClearedEvent", to_user=userA)
@@ -66,7 +74,9 @@ def HandleMakeCall(csta_server, make_call_message, call_duration=1):
 
 
 def MakeCall(userA, userB, call_duration):
+    print("MakeCall", datetime.now())
     userA.send(to_user=userB, message="MakeCall")
+    print("MakeCallResponse", datetime.now())
     userA.wait_for_message("MakeCallResponse")
     userA.wait_for_message("ServiceInitiatedEvent")
     userA.wait_for_message("OriginatedEvent")
@@ -93,6 +103,14 @@ if __name__ == "__main__":
     u1001 = A.new_user("1001")
     u1000.monitor_start()
     u1001.monitor_start()
-    MakeCall(u1000, u1001, call_duration=1)
-    time.sleep(2)
-    MockCSTATCP.shutdown()
+    u1002 = A.new_user("1002")
+    u1003 = A.new_user("1003")
+    u1002.monitor_start()
+    u1003.monitor_start()
+    firstcall = threading.Thread(target=MakeCall, args=(u1000, u1001, 10))
+    firstcall.start()
+    secondcall = threading.Thread(target=MakeCall, args=(u1002, u1003, 10))
+    secondcall.start()
+    # firstcall.join()
+    # secondcall.join()
+    MockCSTATCP.wait_shutdown()

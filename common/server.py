@@ -6,12 +6,13 @@ import selectors
 import socket
 import threading
 import time
+import traceback
 import types
 from copy import copy
 
 import common.client as my_clients
 from common import util
-from common.tc_logging import debug
+from common.tc_logging import debug, warning
 from csta.CstaApplication import CstaApplication
 from csta.CstaParser import parseBytes
 from csta.CstaUser import CstaUser
@@ -44,6 +45,7 @@ class SipServer:
         self.sip_endpoint = SipEndpoint("PythonSipServer")
         self.handlers = {}
         self.handlers_args = {}
+        self.threads = []
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
@@ -90,8 +92,25 @@ class SipServer:
                         self.service_connection(key, mask)
             except socket.timeout:
                 continue
-
+            except IOError:
+                debug("Disconnected. Waiting to reconnect")
+                # self.sel.unregister(self.csta_endpoint.link.socket)
+                continue
+            except KeyboardInterrupt:
+                self.shutdown()
+            except:
+                debug(traceback.format_exc())
+                break
+        self.sel.unregister(self.socket)
+        # self.socket.shutdown(socket.SHUT_RDWR)
+        self.socket.close()
         self.sel.close()
+
+    def wait_shutdown(self):
+        time.sleep(3)
+        for thread in self.threads:
+            thread.join()
+        self.shutdown()
 
     def shutdown(self):
         print("Shutting down server. It may take up to 5 seconds")
@@ -134,7 +153,8 @@ class CstaServer(SipServer):
         self.on("SystemStatus", self.system_status)
         self.on("SystemRegister", self.system_register)
         self.on("SnapshotDevice", self.snapshot_device)
-        util.serverThread(self.consume_buffer)
+        self.lock = threading.Lock()
+        #util.serverThread(self.consume_buffer)
 
     def send(self, message, to_user, from_user=None):
         """ We are using the client methods for the server, which make the from_user and to_user
@@ -163,8 +183,10 @@ class CstaServer(SipServer):
         while True:
             if self.csta_endpoint.message_buffer:
                 for buffered_message in copy(self.csta_endpoint.message_buffer):
+                    self.lock.acquire()
                     self.handlers[buffered_message.event](self, buffered_message,
                                                           *self.handlers_args[buffered_message.event])
+                    self.lock.release()
             time.sleep(0.1)
 
     def set_parameter(self, user, key, value):
@@ -210,8 +232,16 @@ class CstaServer(SipServer):
                 inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
                 inmessage = parseBytes(inbytes)
                 self.csta_endpoint.message_buffer.append(inmessage)
-                if inmessage.event in self.handlers:
-                    self.handlers[inmessage.event](self, inmessage, *self.handlers_args[inmessage.event])
+                if inmessage.event not in self.handlers:
+                    warning("Unexpected message received: {}".format(inmessage.contents()))
+                    # self.lock.acquire()
+                else:
+                    t = threading.Thread(target=self.handlers[inmessage.event],
+                                         args=(self, inmessage, *self.handlers_args[inmessage.event]),
+                                         daemon=True)
+                    t.start()
+                    self.threads.append(t)
+                    # self.lock.release()
             except UnicodeDecodeError:
                 debug("Ignoring malformed data")
         if mask & selectors.EVENT_WRITE:
@@ -237,7 +267,7 @@ class CstaServer(SipServer):
                                                         "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
         self.refid += 1
         self.wait_for_csta_message(for_user=user, message="MonitorStart")
-        self.user.update_incoming_transactions(monitor_message)
+        #self.user.update_incoming_transactions(monitor_message)
         self.send("MonitorStartResponse", to_user=user)
 
     @staticmethod

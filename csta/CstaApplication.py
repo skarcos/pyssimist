@@ -2,7 +2,11 @@
 Purpose: Simulate a CSTA Application
 Initial Version: Costas Skarakis 7/20/2020  
 """
-from _socket import timeout
+import os
+import traceback
+from _socket import timeout as sock_timeout
+from threading import Lock
+from time import sleep
 
 from common.client import TCPClient
 from common.tc_logging import debug, warning
@@ -22,6 +26,7 @@ class CstaApplication:
         self.auto_answer = []
         self.message_buffer = []
         self.waitForCstaMessage = self.wait_for_csta_message  # compatibility alias
+        self.lock = Lock()
 
     def connect(self, local_address, destination_address, protocol="tcp"):
         """ Connect to CSTA Server """
@@ -105,15 +110,22 @@ class CstaApplication:
         if from_user and message not in ("MonitorStart", "MonitorStart.xml"):
             assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(
                 from_user)
-        eventid = user.get_transaction_id(message)
-
         user.set_parameter("callingDevice", from_user)
         user.set_parameter("calledDirectoryNumber", to_user)
         if message.strip().startswith("<?xml"):
-            m = buildMessage(message, user.parameters, eventid)
+            m = buildMessage(message, user.parameters, eventid=0)
         else:
-            m = buildMessageFromFile(get_xml(message), user.parameters, eventid)
-        self.link.send(m.contents())
+            m = buildMessageFromFile(get_xml(message), user.parameters, eventid=0)
+        eventid = user.get_transaction_id(m.event)
+        m.set_eventid(eventid)
+        old_link = self.link
+        try:
+            self.link.send(m.contents())
+        except IOError:
+            while old_link is self.link:
+                sleep(0.1)
+            debug("Retransmitting {} after disconnection and reconnection".format(m.event))
+            self.link.send(m.contents())
         user.update_outgoing_transactions(m)
         return m
 
@@ -130,21 +142,29 @@ class CstaApplication:
         inmessage = None
         user = self.users[for_user]
         # event_id = self.parameters[for_user]["eventid"]
-        len_buffer = len(self.message_buffer)
-        count = 0
+        other_users = [usr for usr in self.users if usr != user]
 
         while not inmessage:
 
-            if count < len_buffer:
+            if self.message_buffer:
                 # first get a message from the buffer
                 inmessage = self.get_buffered_message(for_user)
-                count += 1
+                # if inmessage: print("Found:", inmessage.event, "while waiting for", message)
 
             if not inmessage:
                 # no (more) buffered messages. try the network
                 try:
+                    # print("Waiting for", message)
+#                    inbytes = self.link.waitForCstaData(timeout=0.2)
                     inbytes = self.link.waitForCstaData(timeout=timeout)
                     inmessage = parseBytes(inbytes)
+                # except sock_timeout:
+                #     inmessage = None
+                #     timeout -= 0.2
+                #     if timeout <= 0:
+                #         raise
+                #     else:
+                #         continue
                 except UnicodeDecodeError:
                     debug("Ignoring malformed data")
                     inmessage = None
@@ -163,9 +183,22 @@ class CstaApplication:
                       inmessage_type != "MonitorStartResponse")):
 
                 # we have received an unexpected message.
-                if inmessage_type in self.auto_answer or inmessage["deviceID"] in self.users:
+                if inmessage["deviceID"] and any(usr in inmessage["deviceID"] for usr in other_users):
+                    # TODO apply here the deviceID fix as well
                     self.message_buffer.append(inmessage)
                     inmessage = None
+                elif inmessage_type in self.auto_answer:
+                    try:
+                        if inmessage_type == "SystemStatus":
+                            user.update_incoming_transactions(inmessage)
+                            user.send("SystemStatusResponse")
+                        else:
+                            self.message_buffer.append(inmessage)
+                    except:
+                        debug(traceback.format_exc())
+                        self.message_buffer.append(inmessage)
+                    finally:
+                        inmessage = None
                 else:
                     raise AssertionError('{}: Got "{}" with callID {} and xrefid {} while expecting "{}" with '
                                          'callID {} and xrefid {}.\n{} '.format(for_user,
@@ -177,6 +210,7 @@ class CstaApplication:
                                                                                 user.parameters.get("monitorCrossRefID",
                                                                                                     None),
                                                                                 inmessage))
+            sleep(0.1)
 
         # Evaluate the invoke id
         user.update_incoming_transactions(inmessage)
@@ -192,18 +226,25 @@ class CstaApplication:
         :param directory_number: The monitored directory number
         :return: the buffered SipMessage
         """
+        self.lock.acquire()
         msg = None
         for i in range(len(self.message_buffer)):
-            message = self.message_buffer[i]
+            message = self.message_buffer.pop(0)
             user = self.get_user(directory_number)
             try:
                 device_ID = message["deviceID"]
             except AttributeError:
                 device_ID = None
-            if device_ID == user.deviceID or device_ID is None:
+            #if device_ID == user.deviceID or device_ID is None:
+            if device_ID is None or user.deviceID in device_ID:
+                # using string contains instead of ==  before the device ID in messages seems to come
+                # like this: N&lt;302101150013&gt;
+                # TODO: find a better way to get the deviceID from messages
                 msg = message
-                self.message_buffer.pop(i)
                 break
+            else:
+                self.message_buffer.append(message)
+        self.lock.release()
         return msg
 
     def update_call_parameters(self, directory_number, inresponse):

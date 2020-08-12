@@ -4,6 +4,7 @@ Initial Version: Costas Skarakis 11/11/2018
 """
 import socket
 import ssl
+from threading import Lock
 
 from common.tc_logging import debug
 from common.util import wait_for_sip_data
@@ -15,6 +16,8 @@ class TCPClient(object):
         self.port = port
         self.rip, self.rport = None, None
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.send_lock = Lock()
+        self.wait_lock = Lock()
 
     def connect(self, dest_ip, dest_port):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -29,6 +32,7 @@ class TCPClient(object):
 
     def send(self, data, encoding="utf8"):
         # self.socket.sendall(binascii.hexlify(bytes(data,"utf8")))
+        self.send_lock.acquire()
         if type(data) == type(b''):
             self.socket.sendall(data)
             debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
@@ -36,6 +40,7 @@ class TCPClient(object):
         else:
             self.socket.sendall(bytes(data, encoding))
             debug("Sent from port {}:\n\n".format(self.port) + data.replace("\r\n", "\n"))
+        self.send_lock.release()
 
     def waitForData(self, timeout=None, buffer=4096):
         debug("Waiting on port {}".format(self.port))
@@ -71,6 +76,7 @@ class TCPClient(object):
         return data
 
     def waitForCstaData(self, timeout=None):
+        self.wait_lock.acquire()
         bkp = self.socket.gettimeout()
         if timeout: self.socket.settimeout(timeout)
         try:
@@ -88,6 +94,7 @@ class TCPClient(object):
                     "backslashreplace").replace("\r\n", "\n"))
         finally:
             self.socket.settimeout(bkp)
+        self.wait_lock.release()
         return header + data
 
 

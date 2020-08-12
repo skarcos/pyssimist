@@ -13,7 +13,8 @@ class CstaUser:
         self.monitorCrossRefID = None
         self.callID = []
         # Transactions are a dictionary of eventid to request eg {353: "MakeCall"}
-        self.transactions = {}
+        self.inc_transactions = {}
+        self.out_transactions = {}
         self.deviceID = number
         self.parameters = {"monitorCrossRefID": self.monitorCrossRefID,
                            "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
@@ -26,19 +27,19 @@ class CstaUser:
             # make sure that this response belongs to an active transaction, for instance if MakeCallResponse is
             # received, make sure there is a MakeCall in our active transactions
             target_request = message.split("Response")[0]
-            assert target_request in self.transactions.values(), "{}: Refusing to send {} without having received "\
+            assert target_request in self.inc_transactions.values(), "{}: Refusing to send {} without having received "\
                                                                  "{} first".format(self.number,
                                                                                    message,
                                                                                    target_request)
-            for eventid in self.transactions:
-                if self.transactions[eventid] == target_request:
+            for eventid in self.inc_transactions:
+                if self.inc_transactions[eventid] == target_request:
                     # to review if we need to handle parallel transactions of the same type
                     return eventid
         elif is_request(message):
-            if not self.transactions:
+            if not self.out_transactions:
                 return self.csta_application.min_event_id
             else:
-                return max(int(eventid) for eventid in self.transactions) + 1
+                return max(int(eventid) for eventid in self.out_transactions) + 1
         else:
             assert is_event(message), "Message {} is not a response, request or event".format(message)
             return 9999
@@ -46,17 +47,17 @@ class CstaUser:
     def update_outgoing_transactions(self, message):
         """ message is of type CstaMessage"""
         if message.is_response():
-            if message.eventid in self.transactions:
-                self.transactions.pop(message.eventid)
+            if message.eventid in self.inc_transactions:
+                self.inc_transactions.pop(message.eventid)
                 self.csta_application.min_event_id = max(self.csta_application.min_event_id, message.eventid + 1)
         elif message.is_request():
-            if message.eventid in self.transactions:
+            if message.eventid in self.out_transactions:
                 warning("Sending request {0} with invokeid {1}, "
                         "although request {2} with invokeid {0} has not been answered".format(message.event,
                                                                                               message.eventid,
-                                                                                              self.transactions[
+                                                                                              self.out_transactions[
                                                                                                   message.eventid]))
-            self.transactions[message.eventid] = message.event
+            self.out_transactions[message.eventid] = message.event
             self.csta_application.min_event_id = max(self.csta_application.min_event_id, message.eventid + 1)
         else:
             assert message.is_event(), "Message {} is not a response, request or event".format(message.event)
@@ -64,8 +65,8 @@ class CstaUser:
     def update_incoming_transactions(self, message):
         """ message is of type CstaMessage"""
         if message.is_response():
-            if message.eventid in self.transactions:
-                self.transactions.pop(message.eventid)
+            if message.eventid in self.out_transactions:
+                self.out_transactions.pop(message.eventid)
                 self.csta_application.min_event_id = max(self.csta_application.min_event_id, message.eventid + 1)
             else:
                 exception("{}: Received csta response {} with invoke id {} "
@@ -74,13 +75,13 @@ class CstaUser:
                                                                                      message.eventid,
                                                                                      message))
         elif message.is_request():
-            if message.eventid in self.transactions:
+            if message.eventid in self.inc_transactions:
                 warning("{0}: Received request {1} with invokeid {2}, while"
                         " request {3} with invokeid {2} is already active".format(self.number,
                                                                                   message.event,
                                                                                   message.eventid,
-                                                                                  self.transactions[message.eventid]))
-            self.transactions[message.eventid] = message.event
+                                                                                  self.inc_transactions[message.eventid]))
+            self.inc_transactions[message.eventid] = message.event
             self.csta_application.min_event_id = max(self.csta_application.min_event_id, message.eventid + 1)
         else:
             assert message.is_event(), "Message {} is not a response, request or event".format(message.event)

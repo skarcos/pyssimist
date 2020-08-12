@@ -101,6 +101,10 @@ class CstaMessage(object):
     def message(self):
         return str(self)
 
+    def set_eventid(self, eventid):
+        self.header = self.header[:4] + bytes("%04d" % eventid, encoding=self.encoding)
+        self.eventid = eventid
+
     def contents(self):
         """ returns byte string """
         # Recalculate length
@@ -111,4 +115,6 @@ class CstaMessage(object):
 
 
 if __name__ == "__main__":
+    print(is_response("GetAgentStateResponse"))
+    print(is_request("GetAgentStateResponse"))
     pass
