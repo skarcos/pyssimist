@@ -22,7 +22,8 @@ class CstaUser:
                            "deviceID": self.deviceID}
 
     def get_transaction_id(self, message):
-        """ Determine what the correct eventid is for an outgoing message based on the current state and the message """
+        """ Determine what the correct eventID is for an outgoing message based on the current state and the message.
+         EventID and transactionID can be called InvokeID sometimes"""
         if is_response(message):
             # make sure that this response belongs to an active transaction, for instance if MakeCallResponse is
             # received, make sure there is a MakeCall in our active transactions

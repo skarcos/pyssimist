@@ -93,6 +93,7 @@ class SipServer:
                         self.service_connection(key, mask)
             except socket.timeout:
                 print("timeout")
+                traceback.print_exc()
                 continue
             except (IOError, socket.error):
                 print("Disconnected. Waiting to reconnect")
@@ -158,6 +159,17 @@ class CstaServer(SipServer):
         self.lock = threading.Lock()
         #util.serverThread(self.consume_buffer)
 
+    def cleanup(self):
+        auto_answer = self.csta_endpoint.auto_answer
+        del self.csta_endpoint
+        self.csta_endpoint = CstaApplication()
+        self.csta_endpoint.auto_answer = auto_answer
+        self.user = self.csta_endpoint.new_user(self.name)
+        self.user.parameters["monitorCrossRefID"] = 9999
+        self.csta_endpoint.parameters = {self.name: {"eventid": 1}}
+        self.wait_for_csta_message = self.csta_endpoint.wait_for_csta_message
+        self.wait_for = self.csta_endpoint.wait_for_csta_message
+
     def send(self, message, to_user, from_user=None):
         """ We are using the client methods for the server, which make the from_user and to_user
         terms to have opposite values. We use this method to reverse them and make the code make more sense.
@@ -195,6 +207,7 @@ class CstaServer(SipServer):
         self.csta_endpoint.parameters[user][key] = value
 
     def accept_wrapper(self, sock):
+        self.cleanup()
         conn, addr = sock.accept()  # Should be ready to read
         print("accepted connection from", addr)
         conn.setblocking(False)
@@ -286,5 +299,10 @@ class CstaServer(SipServer):
 
     @staticmethod
     def snapshot_device(self, snapshot_device_message):
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SnapshotDevice")
-        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SnapshotDeviceResponse")
+        user = snapshot_device_message["snapshotObject"]
+        if not user:
+            debug("Invalid snapshot device user '{}'. Empty snapshotObject tag.".format(user))
+            return
+        self.csta_endpoint.wait_for_csta_message(for_user=user, message="SnapshotDevice")
+        # self.csta_endpoint.send(from_user=self.name, to_user=None, message="SnapshotDeviceResponse")
+        self.send("SnapshotDeviceResponse", to_user=user)

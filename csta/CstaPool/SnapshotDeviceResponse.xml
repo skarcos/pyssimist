@@ -1,6 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<SnapshotDeviceResponse xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4">
-   <crossRefIDorSnapshotData>
-      <snapshotData/>
-   </crossRefIDorSnapshotData>
-</SnapshotDeviceResponse>
+<?xml version="1.0" encoding="UTF-8"?><SnapshotDeviceResponse xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><crossRefIDorSnapshotData><snapshotData/></crossRefIDorSnapshotData></SnapshotDeviceResponse>

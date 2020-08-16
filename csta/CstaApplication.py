@@ -119,13 +119,13 @@ class CstaApplication:
         eventid = user.get_transaction_id(m.event)
         m.set_eventid(eventid)
         old_link = self.link
-        try:
-            self.link.send(m.contents())
-        except IOError:
-            while old_link is self.link:
-                sleep(0.1)
-            debug("Retransmitting {} after disconnection and reconnection".format(m.event))
-            self.link.send(m.contents())
+#        try:
+        self.link.send(m.contents())
+        # except IOError:
+        #     while old_link is self.link:
+        #         sleep(0.1)
+        #     debug("Retransmitting {} after disconnection and reconnection".format(m.event))
+        #     self.link.send(m.contents())
         user.update_outgoing_transactions(m)
         return m
 
