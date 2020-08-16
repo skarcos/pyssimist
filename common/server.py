@@ -31,6 +31,7 @@ class SipServer:
         self.ip = ip
         self.port = port
         self.protocol = protocol
+        self.connections = []
         self.continue_serving = False
         self.sel = selectors.DefaultSelector()
         if protocol in ("tcp", "TCP"):
@@ -91,9 +92,10 @@ class SipServer:
                     else:
                         self.service_connection(key, mask)
             except socket.timeout:
+                print("timeout")
                 continue
-            except IOError:
-                debug("Disconnected. Waiting to reconnect")
+            except (IOError, socket.error):
+                print("Disconnected. Waiting to reconnect")
                 # self.sel.unregister(self.csta_endpoint.link.socket)
                 continue
             except KeyboardInterrupt:
@@ -199,6 +201,7 @@ class CstaServer(SipServer):
         data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
         events = selectors.EVENT_READ  # | selectors.EVENT_WRITE
         self.sel.register(conn, events, data=data)
+        self.connections.append(conn)
         self.make_client(conn, addr)
         self.user.parameters["systemStatus"] = "enabled"
         self.user.parameters["sysStatRegisterID"] = self.name
@@ -227,29 +230,28 @@ class CstaServer(SipServer):
         sock = key.fileobj
         data = key.data
         if mask & selectors.EVENT_READ:
-            # print("ready to read")
             try:
                 inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
+                if inbytes is None:
+                    self.csta_endpoint.link.socket.close()
+                    self.sel.unregister(self.csta_endpoint.link.socket)
+                    return
                 inmessage = parseBytes(inbytes)
                 self.csta_endpoint.message_buffer.append(inmessage)
-                if inmessage.event not in self.handlers:
-                    warning("Unexpected message received: {}".format(inmessage.contents()))
-                    # self.lock.acquire()
-                else:
+                if inmessage.event in self.handlers:
                     t = threading.Thread(target=self.handlers[inmessage.event],
                                          args=(self, inmessage, *self.handlers_args[inmessage.event]),
                                          daemon=True)
                     t.start()
                     self.threads.append(t)
-                    # self.lock.release()
             except UnicodeDecodeError:
                 debug("Ignoring malformed data")
-        if mask & selectors.EVENT_WRITE:
-            # print("ready to write")
-            if data.outb:
-                print("echoing", repr(data.outb), "to", data.addr)
-                sent = sock.send(data.outb)  # Should be ready to write
-                data.outb = data.outb[sent:]
+        # if mask & selectors.EVENT_WRITE:
+        #     # print("ready to write")
+        #     if data.outb:
+        #         print("echoing", repr(data.outb), "to", data.addr)
+        #         sent = sock.send(data.outb)  # Should be ready to write
+        #         data.outb = data.outb[sent:]
 
     def get_user(self, directory_number):
         return self.csta_endpoint.get_user(directory_number)

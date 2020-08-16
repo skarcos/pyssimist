@@ -80,9 +80,12 @@ class TCPClient(object):
         bkp = self.socket.gettimeout()
         if timeout: self.socket.settimeout(timeout)
         try:
-            header = ""
-            while not header:
-                header = self.socket.recv(4)
+            # header = ""
+            # while not header:
+            header = self.socket.recv(4)
+            if not header:
+                # disconnected socket
+                return None
             datalength = int(''.join(["%02X" % x for x in header]), base=16) - 4
             data = b''
             while len(data) < datalength:
