@@ -9,6 +9,7 @@ from csta.CstaMessage import is_response, is_event, is_request, CstaMessage
 class CstaUser:
     def __init__(self, number, csta_application):
         self.number = number
+        self.busy = False
         self.csta_application = csta_application
         self.monitorCrossRefID = None
         self.callID = []
@@ -71,9 +72,10 @@ class CstaUser:
                 self.csta_application.min_event_id = max(self.csta_application.min_event_id, message.eventid + 1)
             else:
                 exception("{}: Received csta response {} with invoke id {} "
-                          "but there is no matching active transaction:\n {}".format(self.number,
+                          "but there is no matching active transaction:\n{}\n{}".format(self.number,
                                                                                      message.event,
                                                                                      message.eventid,
+                                                                                     self.out_transactions,
                                                                                      message))
         elif message.is_request():
             if message.eventid in self.inc_transactions:
@@ -100,5 +102,4 @@ class CstaUser:
         return self.csta_application.wait_for_csta_message(self.number,
                                                            message,
                                                            ignore_messages=ignore_messages,
-                                                           new_request=False,
                                                            timeout=timeout)

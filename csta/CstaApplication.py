@@ -9,21 +9,21 @@ from threading import Lock
 from time import sleep
 
 from common.client import TCPClient
-from common.tc_logging import debug, warning
+from common.tc_logging import debug, warning, exception
 from csta.CstaEndpoint import get_xml
 from csta.CstaUser import CstaUser
 from csta.CstaParser import parseBytes, buildMessageFromFile, buildMessage
 
 
 class CstaApplication:
-    def __init__(self):
+    def __init__(self, server=False):
         self.ip = None
         self.port = None
         self.link = None
         self.min_event_id = 0
         self.users = {}
         self.parameters = {}
-        self.auto_answer = []
+        self.server = server
         self.message_buffer = []
         self.waitForCstaMessage = self.wait_for_csta_message  # compatibility alias
         self.lock = Lock()
@@ -118,8 +118,8 @@ class CstaApplication:
             m = buildMessageFromFile(get_xml(message), user.parameters, eventid=0)
         eventid = user.get_transaction_id(m.event)
         m.set_eventid(eventid)
-        old_link = self.link
-#        try:
+        # old_link = self.link
+        # try:
         self.link.send(m.contents())
         # except IOError:
         #     while old_link is self.link:
@@ -129,19 +129,17 @@ class CstaApplication:
         user.update_outgoing_transactions(m)
         return m
 
-    def wait_for_csta_message(self, for_user, message, ignore_messages=(), new_request=False, timeout=5.0):
+    def wait_for_csta_message(self, for_user, message, ignore_messages=(), timeout=5.0):
         """
         Wait for CSTA message
         :param for_user: The message intended recipient
         :param message: The message to wait for
         :param ignore_messages: Messages to ignore
-        :param new_request: If False, the incoming session ID must be the same as the one of the message we last sent (same dialog)
         :param timeout: Defined timeout in seconds.
         :return: the CstaMessage received
         """
         inmessage = None
         user = self.users[for_user]
-        # event_id = self.parameters[for_user]["eventid"]
         other_users = [usr for usr in self.users if usr != user]
 
         while not inmessage:
@@ -149,13 +147,17 @@ class CstaApplication:
             if self.message_buffer:
                 # first get a message from the buffer
                 inmessage = self.get_buffered_message(for_user)
-                # if inmessage: print("Found:", inmessage.event, "while waiting for", message)
+
+            sleep(0.1)
+
+            if self.server:
+                continue
 
             if not inmessage:
                 # no (more) buffered messages. try the network
                 try:
                     # print("Waiting for", message)
-#                    inbytes = self.link.waitForCstaData(timeout=0.2)
+                    # inbytes = self.link.waitForCstaData(timeout=0.2)
                     inbytes = self.link.waitForCstaData(timeout=timeout)
                     inmessage = parseBytes(inbytes)
                 # except sock_timeout:
@@ -169,6 +171,8 @@ class CstaApplication:
                     debug("Ignoring malformed data")
                     inmessage = None
                     continue
+                except sock_timeout:
+                    exception(for_user + " No" + message + " " + str(self.message_buffer))
 
             inmessage_type = inmessage.event
             if inmessage_type in ignore_messages:
@@ -180,25 +184,14 @@ class CstaApplication:
                      (type(message) in (list, tuple) and not any([m == inmessage_type for m in message])) or
                      (inmessage["monitorCrossRefID"] and "monitorCrossRefID" in user.parameters and
                       inmessage["monitorCrossRefID"] != user.parameters["monitorCrossRefID"] and
-                      inmessage_type != "MonitorStartResponse")):
+                      inmessage_type != "MonitorStartResponse") or
+                     inmessage.is_response() and inmessage.eventid not in user.out_transactions):
 
                 # we have received an unexpected message.
                 if inmessage["deviceID"] and any(usr in inmessage["deviceID"] for usr in other_users):
                     # TODO apply here the deviceID fix as well
                     self.message_buffer.append(inmessage)
                     inmessage = None
-                elif inmessage_type in self.auto_answer:
-                    try:
-                        if inmessage_type == "SystemStatus":
-                            user.update_incoming_transactions(inmessage)
-                            user.send("SystemStatusResponse")
-                        else:
-                            self.message_buffer.append(inmessage)
-                    except:
-                        debug(traceback.format_exc())
-                        self.message_buffer.append(inmessage)
-                    finally:
-                        inmessage = None
                 else:
                     raise AssertionError('{}: Got "{}" with callID {} and xrefid {} while expecting "{}" with '
                                          'callID {} and xrefid {}.\n{} '.format(for_user,
@@ -210,14 +203,10 @@ class CstaApplication:
                                                                                 user.parameters.get("monitorCrossRefID",
                                                                                                     None),
                                                                                 inmessage))
-            sleep(0.1)
 
         # Evaluate the invoke id
         user.update_incoming_transactions(inmessage)
         return inmessage
-
-    def set_auto_answer(self, message_type):
-        self.auto_answer.append(message_type)
 
     def get_buffered_message(self, directory_number):
         """
@@ -235,7 +224,6 @@ class CstaApplication:
                 device_ID = message["deviceID"]
             except AttributeError:
                 device_ID = None
-            #if device_ID == user.deviceID or device_ID is None:
             if device_ID is None or user.deviceID in device_ID:
                 # using string contains instead of ==  before the device ID in messages seems to come
                 # like this: N&lt;302101150013&gt;

@@ -47,6 +47,8 @@ class SipServer:
         self.handlers = {}
         self.handlers_args = {}
         self.threads = []
+        self.events = {}
+        self.buffers = {}
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
@@ -85,7 +87,7 @@ class SipServer:
         self.continue_serving = True
         while self.continue_serving:
             try:
-                events = self.sel.select(timeout=5)
+                events = self.sel.select(timeout=60)
                 for key, mask in events:
                     if key.data is None:
                         self.accept_wrapper(key.fileobj)
@@ -136,6 +138,13 @@ class SipServer:
         """
         self.handlers[incoming_message_type] = action
         self.handlers_args[incoming_message_type] = args
+        self.events[incoming_message_type] = threading.Event()
+        self.buffers[incoming_message_type] = []
+        t = threading.Thread(target=self.handlers[incoming_message_type],
+                             args=(self, *self.handlers_args[incoming_message_type]),
+                             daemon=True)
+        t.start()
+        self.threads.append(t)
 
     def service_connection(self, key, mask):
         pass
@@ -146,7 +155,7 @@ class CstaServer(SipServer):
         super().__init__(ip, port, protocol)
         self.name = "PythonCstaServer"
         self.refid = 0
-        self.csta_endpoint = CstaApplication()
+        self.csta_endpoint = CstaApplication(server=True)
         self.user = self.csta_endpoint.new_user(self.name)
         self.user.parameters["monitorCrossRefID"] = 9999
         self.csta_endpoint.parameters = {self.name: {"eventid": 1}}
@@ -157,13 +166,10 @@ class CstaServer(SipServer):
         self.on("SystemRegister", self.system_register)
         self.on("SnapshotDevice", self.snapshot_device)
         self.lock = threading.Lock()
-        #util.serverThread(self.consume_buffer)
 
     def cleanup(self):
-        auto_answer = self.csta_endpoint.auto_answer
         del self.csta_endpoint
-        self.csta_endpoint = CstaApplication()
-        self.csta_endpoint.auto_answer = auto_answer
+        self.csta_endpoint = CstaApplication(server=True)
         self.user = self.csta_endpoint.new_user(self.name)
         self.user.parameters["monitorCrossRefID"] = 9999
         self.csta_endpoint.parameters = {self.name: {"eventid": 1}}
@@ -184,25 +190,6 @@ class CstaServer(SipServer):
         else:
             return self.csta_endpoint.send(from_user=to_user, message=message, to_user=from_user)
 
-    def on(self, incoming_message_type, action, args=()):
-        super().on(incoming_message_type, action, args)
-        self.csta_endpoint.set_auto_answer(incoming_message_type)
-
-    def consume_buffer(self):
-        """
-        Consumer for buffered messages. May need to add a short sleep to save on CPU resources
-        This method runs on its own thread
-        :return:
-        """
-        while True:
-            if self.csta_endpoint.message_buffer:
-                for buffered_message in copy(self.csta_endpoint.message_buffer):
-                    self.lock.acquire()
-                    self.handlers[buffered_message.event](self, buffered_message,
-                                                          *self.handlers_args[buffered_message.event])
-                    self.lock.release()
-            time.sleep(0.1)
-
     def set_parameter(self, user, key, value):
         self.csta_endpoint.parameters[user][key] = value
 
@@ -213,13 +200,13 @@ class CstaServer(SipServer):
         conn.setblocking(False)
         data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
         events = selectors.EVENT_READ  # | selectors.EVENT_WRITE
-        self.sel.register(conn, events, data=data)
         self.connections.append(conn)
         self.make_client(conn, addr)
+        self.sel.register(conn, events, data=data)
         self.user.parameters["systemStatus"] = "enabled"
         self.user.parameters["sysStatRegisterID"] = self.name
         self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatus")
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatusResponse")
+        # self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatusResponse")
         self.user.parameters["eventid"] = 0
 
     def make_client(self, sock, addr):
@@ -240,8 +227,8 @@ class CstaServer(SipServer):
         return client
 
     def service_connection(self, key, mask):
-        sock = key.fileobj
-        data = key.data
+        # sock = key.fileobj
+        # data = key.data
         if mask & selectors.EVENT_READ:
             try:
                 inbytes = self.csta_endpoint.link.waitForCstaData(timeout=5.0)
@@ -250,18 +237,19 @@ class CstaServer(SipServer):
                     self.sel.unregister(self.csta_endpoint.link.socket)
                     return
                 inmessage = parseBytes(inbytes)
-                self.csta_endpoint.message_buffer.append(inmessage)
                 if inmessage.event in self.handlers:
-                    t = threading.Thread(target=self.handlers[inmessage.event],
-                                         args=(self, inmessage, *self.handlers_args[inmessage.event]),
-                                         daemon=True)
-                    t.start()
-                    self.threads.append(t)
+                    self.events[inmessage.event].set()
+                    self.buffers[inmessage.event].append(inmessage)
+                elif inmessage.event == "SystemStatusResponse":
+                    #TODO: Ignoring incoming SystemStatusResponse for now
+                    return
+                else:
+                    self.csta_endpoint.message_buffer.append(inmessage)
             except UnicodeDecodeError:
                 debug("Ignoring malformed data")
         # if mask & selectors.EVENT_WRITE:
         #     # print("ready to write")
-        #     if data.outb:
+        #     if data.outb:self.events['MonitorStart']
         #         print("echoing", repr(data.outb), "to", data.addr)
         #         sent = sock.send(data.outb)  # Should be ready to write
         #         data.outb = data.outb[sent:]
@@ -270,39 +258,74 @@ class CstaServer(SipServer):
         return self.csta_endpoint.get_user(directory_number)
 
     @staticmethod
-    def monitor_user(self, monitor_message):
-        user = monitor_message["deviceObject"]
-        if not user:
-            debug("Invalid monitor user '{}'. Empty deviceID tag.".format(user))
-            return
-        # self.csta_endpoint.new_user(user).parameters["monitorCrossRefID"] = self.refid
-        self.csta_endpoint.new_user(user).parameters = {"monitorCrossRefID": self.refid,
-                                                        "deviceID": user,
-                                                        "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
-                                                        "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
-        self.refid += 1
-        self.wait_for_csta_message(for_user=user, message="MonitorStart")
-        #self.user.update_incoming_transactions(monitor_message)
-        self.send("MonitorStartResponse", to_user=user)
+    def monitor_user(self):
+        while True:
+            self.events["MonitorStart"].wait()
+            self.events["MonitorStart"].clear()
+            while True:
+                try:
+                    monitor_message = self.buffers["MonitorStart"].pop(0)
+                    user = monitor_message["deviceObject"]
+                    if not user:
+                        debug("Invalid monitor user '{}'. Empty deviceID tag.".format(user))
+                        return
+                    self.csta_endpoint.new_user(user).parameters = {"monitorCrossRefID": self.refid,
+                                                                    "deviceID": user,
+                                                                    "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
+                                                                    "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
+                    self.refid += 1
+                    self.csta_endpoint.get_user(user).update_incoming_transactions(monitor_message)
+                    self.send("MonitorStartResponse", to_user=user)
+                    self.csta_endpoint.get_user(user).update_outgoing_transactions(monitor_message)
+                except IndexError:
+                    break
 
     @staticmethod
-    def system_register(self, system_register_message):
-        self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemRegister")
-        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
+    def system_register(self):
+        while True:
+            self.events["SystemRegister"].wait()
+            self.events["SystemRegister"].clear()
+            while True:
+                try:
+                    user = self.csta_endpoint.get_user(self.name)
+                    message = self.buffers["SystemRegister"].pop(0)
+                    user.update_incoming_transactions(message)
+                    self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
+                    self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
+                    user.update_outgoing_transactions(message)
+                except IndexError:
+                    break
 
     @staticmethod
-    def system_status(self, system_status_message):
-        self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
-        self.csta_endpoint.wait_for_csta_message(for_user=self.name, message="SystemStatus")
-        self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatusResponse")
+    def system_status(self):
+        while True:
+            self.events["SystemStatus"].wait()
+            self.events["SystemStatus"].clear()
+            while True:
+                try:
+                    user = self.csta_endpoint.get_user(self.name)
+                    message = self.buffers["SystemStatus"].pop(0)
+                    user.update_incoming_transactions(message)
+                    self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
+                    self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatusResponse")
+                    user.update_outgoing_transactions(message)
+                except IndexError:
+                    break
 
     @staticmethod
-    def snapshot_device(self, snapshot_device_message):
-        user = snapshot_device_message["snapshotObject"]
-        if not user:
-            debug("Invalid snapshot device user '{}'. Empty snapshotObject tag.".format(user))
-            return
-        self.csta_endpoint.wait_for_csta_message(for_user=user, message="SnapshotDevice")
-        # self.csta_endpoint.send(from_user=self.name, to_user=None, message="SnapshotDeviceResponse")
-        self.send("SnapshotDeviceResponse", to_user=user)
+    def snapshot_device(self):
+        while True:
+            self.events["SnapshotDevice"].wait()
+            self.events["SnapshotDevice"].clear()
+            while True:
+                try:
+                    snapshot_device_message = self.buffers["SnapshotDevice"].pop(0)
+                    user = snapshot_device_message["snapshotObject"]
+                    self.csta_endpoint.get_user(user).update_incoming_transactions(snapshot_device_message)
+                    if not user:
+                        debug("Invalid snapshot device user '{}'. Empty snapshotObject tag.".format(user))
+                        return
+                    self.send("SnapshotDeviceResponse", to_user=user)
+                    self.csta_endpoint.get_user(user).update_outgoing_transactions(snapshot_device_message)
+                except IndexError:
+                    break
