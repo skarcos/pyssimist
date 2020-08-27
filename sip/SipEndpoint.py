@@ -243,8 +243,8 @@ class SipEndpoint(object):
 
     def send_new(self, target_sip_ep=None, message_string="", expected_response=None, ignore_messages=[]):
         """ Start a new dialog and send a message """
+        self.parameters["userA"] = self.number
         if target_sip_ep:
-            self.parameters["userA"] = self.number
             if isinstance(target_sip_ep, SipEndpoint):
                 self.parameters["userB"] = target_sip_ep.number
                 target_sip_ep.parameters["userB"] = self.number

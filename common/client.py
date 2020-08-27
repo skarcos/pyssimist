@@ -15,7 +15,11 @@ class TCPClient(object):
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if ":" in self.ip:
+            # ipv6 case
+            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        else:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.send_lock = Lock()
         self.wait_lock = Lock()
 
@@ -106,10 +110,16 @@ class UDPClient(TCPClient):
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if ":" in self.ip:
+            # ipv6 case
+            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        else:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.bind((self.ip, self.port))
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
+        self.send_lock = Lock()
+        self.wait_lock = Lock()
 
 
 class TLSClient(TCPClient):
@@ -118,6 +128,8 @@ class TLSClient(TCPClient):
         self.port = port
         self.rip, self.rport = None, None
         self.server_name = subject_name
+        self.send_lock = Lock()
+        self.wait_lock = Lock()
 
         # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
         if hasattr(ssl, "PROTOCOL_TLS_CLIENT"):
@@ -136,11 +148,15 @@ class TLSClient(TCPClient):
             self.context.load_verify_locations(certificate)
 
     def connect(self, dest_ip, dest_port):
-        tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if ":" in self.ip:
+            # ipv6 case
+            tcp_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        else:
+            tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket = self.context.wrap_socket(tcp_socket, server_hostname=self.server_name)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.bind((self.ip, self.port))
-        self.port = self.socket.getsockname()[1]
+#        self.socket.bind((self.ip, self.port))
+        #self.port = self.socket.getsockname()[1]
         self.socket.settimeout(5.0)
         self.sockfile = self.socket.makefile(mode='rb')
         super().connect(dest_ip, dest_port)
