@@ -13,6 +13,7 @@ from copy import copy
 import common.client as my_clients
 from common import util
 from common.tc_logging import debug, warning
+from sip.SipParser import parseBytes as parseSip
 from csta.CstaApplication import CstaApplication
 from csta.CstaParser import parseBytes
 from csta.CstaUser import CstaUser
@@ -49,14 +50,21 @@ class SipServer:
         self.threads = []
         self.events = {}
         self.buffers = {}
+        self.reply = self.sip_endpoint.reply
+        self.send = self.sip_endpoint.send
+        self.wait_for_message = self.sip_endpoint.wait_for_message
+        self.wait_for_messages = self.sip_endpoint.wait_for_messages
+        self.set_dialog = self.sip_endpoint.set_dialog
+        self.save_message = self.sip_endpoint.save_message
+        self.set_transaction = self.sip_endpoint.set_transaction
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
         print("accepted connection from", addr)
-        # conn.setblocking(False)
-        # data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-        # events = selectors.EVENT_READ | selectors.EVENT_WRITE
-        # self.sel.register(conn, events, data=data)
+        conn.setblocking(False)
+        data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
+        events = selectors.EVENT_READ | selectors.EVENT_WRITE
+        self.sel.register(conn, events, data=data)
         self.make_client(conn, addr)
 
     def make_client(self, sock, addr):
@@ -147,7 +155,29 @@ class SipServer:
         self.threads.append(t)
 
     def service_connection(self, key, mask):
-        pass
+        # sock = key.fileobj
+        # data = key.data
+        if mask & selectors.EVENT_READ:
+            try:
+                inbytes = self.sip_endpoint.link.waitForSipData(timeout=5.0)
+                if inbytes is None:
+                    self.sip_endpoint.link.socket.close()
+                    self.sel.unregister(self.sip_endpoint.link.socket)
+                    return
+                inmessage = parseSip(inbytes)
+                if inmessage.get_status_or_method() in self.handlers:
+                    self.events[inmessage.get_status_or_method()].set()
+                    self.buffers[inmessage.get_status_or_method()].append(inmessage)
+                else:
+                    self.sip_endpoint.message_buffer.append(inmessage)
+            except UnicodeDecodeError:
+                debug("Ignoring malformed data")
+        # if mask & selectors.EVENT_WRITE:
+        #     # print("ready to write")
+        #     if data.outb:self.events['MonitorStart']
+        #         print("echoing", repr(data.outb), "to", data.addr)
+        #         sent = sock.send(data.outb)  # Should be ready to write
+        #         data.outb = data.outb[sent:]
 
 
 class CstaServer(SipServer):
