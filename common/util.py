@@ -11,6 +11,7 @@ from time import time
 import re
 import io
 import xml.etree.ElementTree as ET
+import logging.handlers
 from common.tc_logging import logger
 
 
@@ -317,13 +318,19 @@ class Load(object):
         self.stopCondition = stopCondition
         self.startTime = time()
         self.active = []
+        st_logger = logging.getLogger('Statistics')
+        handler = logging.handlers.RotatingFileHandler("Statistics.txt", mode="w", maxBytes=20000000, backupCount=5)
+        st_logger.addHandler(handler)
+        self.log = st_logger
+        self.calls = {"Started": 0, "Finished": 0}
+        self.statistics()
 
     def start(self):
         """
         Every :interval seconds, start :quantity flows
         """
         for i in range(self.quantity):
-            self.runNextFlow()
+            self.run_next_flow()
         if not self.stopCondition and (self.duration < 0 or time() - self.startTime < self.duration):
             Timer(self.interval, self.start).start()
         else:
@@ -336,16 +343,25 @@ class Load(object):
         """
         self.stopCondition = True
 
-    def runNextFlow(self):
+    def run_next_flow(self):
         c = LoadThread(target=self.flow, args=self.args)
         c.start()
         self.active.append(c)
+        self.calls["Started"] += 1
 
     def monitor(self):
         while self.active or not self.stopCondition:
             for inst in (ins for ins in self.active if not ins.is_alive()):
                 inst.join()
                 self.active.remove(inst)
+                self.calls["Finished"] += 1
+
+    def statistics(self):
+        self.log.info("{}:{}".format(time(), self.calls))
+        if not self.stopCondition and (self.duration < 0 or time() - self.startTime < self.duration) or self.active:
+            Timer(1, self.statistics).start()
+        else:
+            print("STOPPING")
 
 
 class LoadThread(Thread):

@@ -154,6 +154,9 @@ class SipServer:
         t.start()
         self.threads.append(t)
 
+    def set_parameter(self, user, key, value):
+        self.sip_endpoint.parameters[key] = value
+
     def service_connection(self, key, mask):
         # sock = key.fileobj
         # data = key.data
