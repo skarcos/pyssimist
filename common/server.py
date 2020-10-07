@@ -186,6 +186,8 @@ class SipServer:
 class CstaServer(SipServer):
     def __init__(self, ip, port, protocol="tcp"):
         super().__init__(ip, port, protocol)
+        # remove the parent class definition before I redefine it below... not sure why I had to do that
+        del self.send
         self.name = "PythonCstaServer"
         self.refid = 0
         self.csta_endpoint = CstaApplication(server=True)
