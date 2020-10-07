@@ -148,11 +148,22 @@ class SipServer:
         self.handlers_args[incoming_message_type] = args
         self.events[incoming_message_type] = threading.Event()
         self.buffers[incoming_message_type] = []
-        t = threading.Thread(target=self.handlers[incoming_message_type],
-                             args=(self, *self.handlers_args[incoming_message_type]),
+        t = threading.Thread(target=self.on_loop,
+                             args=(incoming_message_type, action, args),
                              daemon=True)
         t.start()
         self.threads.append(t)
+
+    def on_loop(self, incoming_message_type, action, args=()):
+        while True:
+            self.events[incoming_message_type].wait()
+            self.events[incoming_message_type].clear()
+            while True:
+                try:
+                    message = self.buffers[incoming_message_type].pop(0)
+                    action(self, message, *args)
+                except IndexError:
+                    break
 
     def set_parameter(self, user, key, value):
         self.sip_endpoint.parameters[key] = value
@@ -293,74 +304,42 @@ class CstaServer(SipServer):
         return self.csta_endpoint.get_user(directory_number)
 
     @staticmethod
-    def monitor_user(self):
-        while True:
-            self.events["MonitorStart"].wait()
-            self.events["MonitorStart"].clear()
-            while True:
-                try:
-                    monitor_message = self.buffers["MonitorStart"].pop(0)
-                    user = monitor_message["deviceObject"]
-                    if not user:
-                        debug("Invalid monitor user '{}'. Empty deviceID tag.".format(user))
-                        return
-                    self.csta_endpoint.new_user(user).parameters = {"monitorCrossRefID": self.refid,
-                                                                    "deviceID": user,
-                                                                    "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.refid,
-                                                                    "CSTA_USE_MONITOR_CROSS_REF_ID": self.refid}
-                    self.refid += 1
-                    self.csta_endpoint.get_user(user).update_incoming_transactions(monitor_message)
-                    self.send("MonitorStartResponse", to_user=user)
-                    self.csta_endpoint.get_user(user).update_outgoing_transactions(monitor_message)
-                except IndexError:
-                    break
+    def monitor_user(csta_server, monitor_message):
+        user = monitor_message["deviceObject"]
+        if not user:
+            debug("Invalid monitor user '{}'. Empty deviceID tag.".format(user))
+            return
+        csta_server.csta_endpoint.new_user(user).parameters = {"monitorCrossRefID": csta_server.refid,
+                                                        "deviceID": user,
+                                                        "CSTA_CREATE_MONITOR_CROSS_REF_ID": csta_server.refid,
+                                                        "CSTA_USE_MONITOR_CROSS_REF_ID": csta_server.refid}
+        csta_server.refid += 1
+        csta_server.csta_endpoint.get_user(user).update_incoming_transactions(monitor_message)
+        csta_server.send("MonitorStartResponse", to_user=user)
+        csta_server.csta_endpoint.get_user(user).update_outgoing_transactions(monitor_message)
 
     @staticmethod
-    def system_register(self):
-        while True:
-            self.events["SystemRegister"].wait()
-            self.events["SystemRegister"].clear()
-            while True:
-                try:
-                    user = self.csta_endpoint.get_user(self.name)
-                    message = self.buffers["SystemRegister"].pop(0)
-                    user.update_incoming_transactions(message)
-                    self.csta_endpoint.parameters[self.name]["sysStatRegisterID"] = self.name
-                    self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemRegisterResponse")
-                    user.update_outgoing_transactions(message)
-                except IndexError:
-                    break
+    def system_register(csta_server, message):
+        user = csta_server.csta_endpoint.get_user(csta_server.name)
+        user.update_incoming_transactions(message)
+        csta_server.csta_endpoint.parameters[csta_server.name]["sysStatRegisterID"] = csta_server.name
+        csta_server.csta_endpoint.send(from_user=csta_server.name, to_user=None, message="SystemRegisterResponse")
+        user.update_outgoing_transactions(message)
 
     @staticmethod
-    def system_status(self):
-        while True:
-            self.events["SystemStatus"].wait()
-            self.events["SystemStatus"].clear()
-            while True:
-                try:
-                    user = self.csta_endpoint.get_user(self.name)
-                    message = self.buffers["SystemStatus"].pop(0)
-                    user.update_incoming_transactions(message)
-                    self.csta_endpoint.parameters[self.name]["systemStatus"] = "normal"
-                    self.csta_endpoint.send(from_user=self.name, to_user=None, message="SystemStatusResponse")
-                    user.update_outgoing_transactions(message)
-                except IndexError:
-                    break
+    def system_status(csta_server, message):
+        user = csta_server.csta_endpoint.get_user(csta_server.name)
+        user.update_incoming_transactions(message)
+        csta_server.csta_endpoint.parameters[csta_server.name]["systemStatus"] = "normal"
+        csta_server.csta_endpoint.send(from_user=csta_server.name, to_user=None, message="SystemStatusResponse")
+        user.update_outgoing_transactions(message)
 
     @staticmethod
-    def snapshot_device(self):
-        while True:
-            self.events["SnapshotDevice"].wait()
-            self.events["SnapshotDevice"].clear()
-            while True:
-                try:
-                    snapshot_device_message = self.buffers["SnapshotDevice"].pop(0)
-                    user = snapshot_device_message["snapshotObject"]
-                    self.csta_endpoint.get_user(user).update_incoming_transactions(snapshot_device_message)
-                    if not user:
-                        debug("Invalid snapshot device user '{}'. Empty snapshotObject tag.".format(user))
-                        return
-                    self.send("SnapshotDeviceResponse", to_user=user)
-                    self.csta_endpoint.get_user(user).update_outgoing_transactions(snapshot_device_message)
-                except IndexError:
-                    break
+    def snapshot_device(csta_server, snapshot_device_message):
+        user = snapshot_device_message["snapshotObject"]
+        csta_server.csta_endpoint.get_user(user).update_incoming_transactions(snapshot_device_message)
+        if not user:
+            debug("Invalid snapshot device user '{}'. Empty snapshotObject tag.".format(user))
+            return
+        csta_server.send("SnapshotDeviceResponse", to_user=user)
+        csta_server.csta_endpoint.get_user(user).update_outgoing_transactions(snapshot_device_message)
