@@ -59,14 +59,17 @@ class TCPClient(object):
                                                                                                              "\n"))
         return data
 
-    def waitForSipData(self, timeout=None):
-        debug("Waiting on port {}".format(self.port))
-        bkp = self.socket.gettimeout()
+    def waitForSipData(self, timeout=None, client=None):
+        if not client:
+            client = self
+        client.wait_lock.acquire()
+        debug("Waiting on port {}".format(client.port))
+        bkp = client.socket.gettimeout()
         data = b""
         if timeout:
-            self.socket.settimeout(timeout)
+            client.socket.settimeout(timeout)
         try:
-            data = wait_for_sip_data(self.sockfile)
+            data = wait_for_sip_data(client.sockfile)
         except ValueError:
             debug(data.decode())
             # debug(line.decode())
@@ -75,8 +78,9 @@ class TCPClient(object):
             debug('Data received before timeout: "{}"'.format(data.decode()))
             raise
         finally:
-            self.socket.settimeout(bkp)
-        debug("Received on port {}:\n\n".format(self.port) + data.decode("utf8").replace("\r\n", "\n"))
+            client.socket.settimeout(bkp)
+        debug("Received on port {}:\n\n".format(client.port) + data.decode("utf8").replace("\r\n", "\n"))
+        client.wait_lock.release()
         return data
 
     def waitForCstaData(self, timeout=None):

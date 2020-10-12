@@ -353,7 +353,7 @@ class SipEndpoint(object):
                 break
         return msg
 
-    def wait_for_message(self, message_type, dialog=None, ignore_messages=[], timeout=5.0):
+    def wait_for_message(self, message_type, dialog=None, ignore_messages=(), link=None, timeout=5.0):
         """
         Wait for a specific type of SIP message.
         :param message_type: is a string that we will make sure is
@@ -369,6 +369,8 @@ class SipEndpoint(object):
         :param timeout: Defined timeout in seconds.
         :return: A SipMessage constructed from the incoming message
         """
+        if not link:
+            link = self.link
         if not dialog:
             dialog = self.current_dialog
         else:
@@ -390,7 +392,7 @@ class SipEndpoint(object):
 
             if not inmessage:
                 # no (more) buffered messages. try the network
-                inbytes = self.link.waitForSipData(timeout=timeout)
+                inbytes = self.link.waitForSipData(timeout=timeout, client=link)
                 inmessage = self.handleDA(last_sent_message, parseBytes(inbytes))
 
             inmessage_type = inmessage.get_status_or_method()

@@ -50,20 +50,37 @@ class SipServer:
         self.threads = []
         self.events = {}
         self.buffers = {}
-        self.reply = self.sip_endpoint.reply
-        self.send = self.sip_endpoint.send
+        self.registered_addresses = {}
+        self.links = {}
         self.wait_for_message = self.sip_endpoint.wait_for_message
         self.wait_for_messages = self.sip_endpoint.wait_for_messages
         self.set_dialog = self.sip_endpoint.set_dialog
         self.save_message = self.sip_endpoint.save_message
         self.set_transaction = self.sip_endpoint.set_transaction
+        self.lock = threading.Lock()
+
+    def send(self, client_address, *args, **kwargs):
+        with self.lock:
+            self.sip_endpoint.use_link(self.links[client_address.replace("localhost", "127.0.0.1")])
+            return self.sip_endpoint.send(*args, **kwargs)
+
+    def send_new(self, client_address, *args, **kwargs):
+        with self.lock:
+            self.sip_endpoint.use_link(self.links[client_address.replace("localhost", "127.0.0.1")])
+            return self.sip_endpoint.send_new(*args, **kwargs)
+
+    def reply(self, client_address, *args, **kwargs):
+        with self.lock:
+            self.sip_endpoint.use_link(self.links[client_address.replace("localhost", "127.0.0.1")])
+            return self.sip_endpoint.reply(*args, **kwargs)
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
         print("accepted connection from", addr)
         conn.setblocking(False)
         data = types.SimpleNamespace(addr=addr, inb=b"", outb=b"")
-        events = selectors.EVENT_READ | selectors.EVENT_WRITE
+        events = selectors.EVENT_READ  # | selectors.EVENT_WRITE
+        self.connections.append(conn)
         self.sel.register(conn, events, data=data)
         self.make_client(conn, addr)
 
@@ -82,7 +99,7 @@ class SipServer:
         self.sip_endpoint.link.socket = sock
         #        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sip_endpoint.link.sockfile = sock.makefile(mode='rb')
-
+        self.links["{}:{}".format(*addr)] = client
         return client
 
     def serve_forever(self):
@@ -161,24 +178,46 @@ class SipServer:
             while True:
                 try:
                     message = self.buffers[incoming_message_type].pop(0)
+                    self.update(message)
                     action(self, message, *args)
                 except IndexError:
                     break
 
-    def set_parameter(self, user, key, value):
+    def update(self, inmessage):
+        # last_sent_message = self.sip_endpoint.get_last_message_in(dialog)
+        # if last_sent_message:
+        #     transaction = last_sent_message.get_transaction()
+        self.save_message(inmessage)
+        if inmessage.type == "Request":
+            self.set_transaction(inmessage.get_transaction())
+        else:
+            self.sip_endpoint.update_to_tag(inmessage.get_dialog())
+        self.set_dialog(inmessage.get_dialog())
+
+    def set_parameter(self, key, value, *args):
+        """
+        Set sip parameters
+        :param key: key
+        :param value: value assigned to key
+        """
         self.sip_endpoint.parameters[key] = value
 
     def service_connection(self, key, mask):
-        # sock = key.fileobj
-        # data = key.data
+        sock = key.fileobj
+        data = key.data
+        address = "{}:{}".format(*data.addr)
         if mask & selectors.EVENT_READ:
             try:
-                inbytes = self.sip_endpoint.link.waitForSipData(timeout=5.0)
+                inbytes = self.sip_endpoint.link.waitForSipData(timeout=5.0, client=self.links[address])
                 if inbytes is None:
                     self.sip_endpoint.link.socket.close()
                     self.sel.unregister(self.sip_endpoint.link.socket)
                     return
                 inmessage = parseSip(inbytes)
+                in_dialog = inmessage.get_dialog()
+                if not in_dialog["to_tag"] and {"Call-ID": in_dialog["Call-ID"],
+                                                "from_tag": in_dialog["from_tag"]} in self.sip_endpoint.dialogs:
+                    self.sip_endpoint.dialogs.append(in_dialog)
                 if inmessage.get_status_or_method() in self.handlers:
                     self.events[inmessage.get_status_or_method()].set()
                     self.buffers[inmessage.get_status_or_method()].append(inmessage)
@@ -192,6 +231,9 @@ class SipServer:
         #         print("echoing", repr(data.outb), "to", data.addr)
         #         sent = sock.send(data.outb)  # Should be ready to write
         #         data.outb = data.outb[sent:]
+
+    def is_registered(self, user):
+        return user.split("@")[0] in self.registered_addresses
 
 
 class CstaServer(SipServer):
@@ -211,7 +253,6 @@ class CstaServer(SipServer):
         self.on("SystemStatus", self.system_status)
         self.on("SystemRegister", self.system_register)
         self.on("SnapshotDevice", self.snapshot_device)
-        self.lock = threading.Lock()
 
     def cleanup(self):
         del self.csta_endpoint
@@ -236,7 +277,13 @@ class CstaServer(SipServer):
         else:
             return self.csta_endpoint.send(from_user=to_user, message=message, to_user=from_user)
 
-    def set_parameter(self, user, key, value):
+    def update(self, message):
+        user = self.csta_endpoint.get_user(self.name)
+        user.update_incoming_transactions(message)
+
+    def set_parameter(self, key, value, user=None):
+        if not user:
+            user = self.user
         self.csta_endpoint.parameters[user][key] = value
 
     def accept_wrapper(self, sock):
@@ -287,7 +334,7 @@ class CstaServer(SipServer):
                     self.events[inmessage.event].set()
                     self.buffers[inmessage.event].append(inmessage)
                 elif inmessage.event == "SystemStatusResponse":
-                    #TODO: Ignoring incoming SystemStatusResponse for now
+                    # TODO: Ignoring incoming SystemStatusResponse for now
                     return
                 else:
                     self.csta_endpoint.message_buffer.append(inmessage)
@@ -310,9 +357,9 @@ class CstaServer(SipServer):
             debug("Invalid monitor user '{}'. Empty deviceID tag.".format(user))
             return
         csta_server.csta_endpoint.new_user(user).parameters = {"monitorCrossRefID": csta_server.refid,
-                                                        "deviceID": user,
-                                                        "CSTA_CREATE_MONITOR_CROSS_REF_ID": csta_server.refid,
-                                                        "CSTA_USE_MONITOR_CROSS_REF_ID": csta_server.refid}
+                                                               "deviceID": user,
+                                                               "CSTA_CREATE_MONITOR_CROSS_REF_ID": csta_server.refid,
+                                                               "CSTA_USE_MONITOR_CROSS_REF_ID": csta_server.refid}
         csta_server.refid += 1
         csta_server.csta_endpoint.get_user(user).update_incoming_transactions(monitor_message)
         csta_server.send("MonitorStartResponse", to_user=user)
@@ -320,19 +367,16 @@ class CstaServer(SipServer):
 
     @staticmethod
     def system_register(csta_server, message):
-        user = csta_server.csta_endpoint.get_user(csta_server.name)
-        user.update_incoming_transactions(message)
         csta_server.csta_endpoint.parameters[csta_server.name]["sysStatRegisterID"] = csta_server.name
         csta_server.csta_endpoint.send(from_user=csta_server.name, to_user=None, message="SystemRegisterResponse")
-        user.update_outgoing_transactions(message)
+        # user.update_outgoing_transactions(message)
 
     @staticmethod
     def system_status(csta_server, message):
-        user = csta_server.csta_endpoint.get_user(csta_server.name)
-        user.update_incoming_transactions(message)
         csta_server.csta_endpoint.parameters[csta_server.name]["systemStatus"] = "normal"
         csta_server.csta_endpoint.send(from_user=csta_server.name, to_user=None, message="SystemStatusResponse")
-        user.update_outgoing_transactions(message)
+
+    #        user.update_outgoing_transactions(message)
 
     @staticmethod
     def snapshot_device(csta_server, snapshot_device_message):

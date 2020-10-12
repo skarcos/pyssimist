@@ -8,6 +8,19 @@ import hashlib
 from common import util
 
 
+def get_user_from_message(sip_message, header=None):
+    pattern = r"<?sip:([^;]*).*[>;]"
+    if not header:
+        header_value = sip_message.request_line
+    else:
+        header_value = sip_message[header]
+    M = re.search(pattern, header_value)
+    if M:
+        return M.group(1)
+    else:
+        return None
+
+
 class SipMessage(object):
     """
     Representation of a SIP message
