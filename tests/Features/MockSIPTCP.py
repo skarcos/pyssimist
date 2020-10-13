@@ -5,6 +5,7 @@ Initial Version: Costas Skarakis 7/11/2020
 import re
 
 from common.server import SipServer
+from common.tc_logging import debug
 from sip.SipEndpoint import SipEndpoint
 from sip.SipMessage import get_user_from_message
 from sip.messages import message
@@ -21,25 +22,65 @@ def reg_user(sip_server, register_message, expiration_in_seconds=360):
     sip_server.registered_addresses[user] = address
 
 
-def b2b_uas(sip_server, invite):
+def b2b_uas_establish(sip_server, invite):
     a = get_user_from_message(invite, header="Contact")
     b = get_user_from_message(invite)
+
     leg_a_dialog = invite.get_dialog()
     a_user, a_address = a.split("@")
     b_user = b.split("@")[0]
     b_address = sip_server.registered_addresses[b_user]
     if not sip_server.is_registered(a):
         sip_server.reply(message["403_Forbidden"])
+        return
     if not sip_server.is_registered(b):
         sip_server.reply(message["404_Not_Found"])
+        return
     sip_server.reply(a_address, message["Trying_1"])
 
-    invite_b = sip_server.send_new(b_address, b_user, invite.contents())
-    leg_b_dialog = invite_b.get_dialog()
-    sip_server.wait_for_message("100 Trying")
+    sip_server.send_new(b_address, b_user, invite.contents())
+
+    time.sleep(0.5)
+    leg_b_dialog = sip_server.wait_for_message("100 Trying").get_dialog()
+
+    time.sleep(0.5)
     b_ringing = sip_server.wait_for_message("180 Ringing", dialog=leg_b_dialog)
+
+    time.sleep(0.5)
     sip_server.send(a_address, b_ringing.contents(), dialog=leg_a_dialog)
 
+    time.sleep(0.5)
+    b_ok_invite = sip_server.wait_for_message("200 OK", dialog=leg_b_dialog)
+    sip_server.send(a_address, b_ok_invite.contents(), dialog=leg_a_dialog)
+
+    time.sleep(0.5)
+    sip_server.send(b_address, message["Ack_1"], dialog=leg_b_dialog)
+
+    time.sleep(0.5)
+    sip_server.wait_for_message("ACK", dialog=leg_a_dialog)
+    sip_server.active_calls.append((leg_a_dialog, leg_b_dialog))
+
+
+def b2b_uas_terminate(sip_server, bye):
+    a = get_user_from_message(bye, header="From")
+    b = get_user_from_message(bye)
+    leg_a_dialog = bye.get_dialog()
+    a_user = a.split("@")[0]
+    b_user = b.split("@")[0]
+    a_address = sip_server.registered_addresses[a_user]
+
+    leg_b_dialog = sip_server.get_active_call(dialog=leg_a_dialog)
+    if not leg_b_dialog:
+        sip_server.reply(a_address, message["481_Transaction_does_not_exist"])
+        return
+
+    b_address = sip_server.registered_addresses[b_user]
+
+    sip_server.reply(a_address, message["200_OK_1"], dialog=leg_a_dialog)
+    sip_server.send(b_address, message["Bye_1"], dialog=leg_b_dialog)
+
+    time.sleep(0.5)
+    sip_server.wait_for_message("200 OK", dialog=leg_b_dialog)
 
 
 if __name__ == "__main__":
@@ -51,7 +92,8 @@ if __name__ == "__main__":
     B = SipEndpoint("121242125")
     SipMock = MockSIPTCP
     SipMock.on("REGISTER", reg_user)
-    SipMock.on("INVITE", b2b_uas)
+    SipMock.on("INVITE", b2b_uas_establish)
+    SipMock.on("BYE", b2b_uas_terminate)
 
     A.connect(("localhost", 6666),
               (HOST, PORT),

@@ -9,7 +9,7 @@ from common import util
 
 
 def get_user_from_message(sip_message, header=None):
-    pattern = r"<?sip:([^;]*).*[>;]"
+    pattern = r"<?sip:([^;>]*).*[>;]"
     if not header:
         header_value = sip_message.request_line
     else:

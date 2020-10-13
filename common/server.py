@@ -51,6 +51,7 @@ class SipServer:
         self.events = {}
         self.buffers = {}
         self.registered_addresses = {}
+        self.active_calls = []
         self.links = {}
         self.wait_for_message = self.sip_endpoint.wait_for_message
         self.wait_for_messages = self.sip_endpoint.wait_for_messages
@@ -234,6 +235,14 @@ class SipServer:
 
     def is_registered(self, user):
         return user.split("@")[0] in self.registered_addresses
+
+    def get_active_call(self, dialog):
+        for call in self.active_calls:
+            if dialog == call[0]:
+                return call[1]
+            elif dialog == call[1]:
+                return call[0]
+        return None
 
 
 class CstaServer(SipServer):

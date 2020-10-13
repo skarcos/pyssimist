@@ -4,7 +4,7 @@ Initial Version: Costas Skarakis
 """
 from threading import Timer
 
-from common.tc_logging import exception, debug
+from common.tc_logging import exception
 from sip.SipParser import parseBytes, buildMessage
 import common.util as util
 import common.client as client
@@ -412,9 +412,10 @@ class SipEndpoint(object):
                 if inmessage_dialog in self.dialogs or inmessage_type == "INVITE":
                     # message is part of another active dialog or a new call, so buffer it
                     self.message_buffer.append(inmessage)
-                    debug("Appended {} with {} to buffer. Will keep waiting for {}".format(inmessage_type,
-                                                                                           inmessage_dialog,
-                                                                                           message_type))
+                    # print("Appended {} with {} to buffer. Will keep waiting for {} in {} ".format(inmessage_type,
+                    #                                                                        inmessage_dialog,
+                    #                                                                        message_type,
+                    #                                                                            dialog))
                     inmessage = None
                 else:
                     d = ["sip:{}@".format(line.number) in inmessage["To"] for line in self.secondary_lines]
