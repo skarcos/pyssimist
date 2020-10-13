@@ -312,6 +312,7 @@ class SipEndpoint(object):
         try:
             previous_message = self.get_last_message_in(dialog)
             m.make_response_to(previous_message)
+            self.update_to_tag(m.get_dialog())
         except:
             # New dialog, same call-id, eg NOTIFY after Keyset SUBSCRIBE.
             # Must be a SIP Response
