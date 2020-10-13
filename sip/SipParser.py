@@ -25,10 +25,14 @@ def parseBytes(bString, sep="\r\n", encoding=ENCODING):
     header_lines = header.split(sep)
     request_or_response = header_lines[0]
     headers = {}
-
+    count = 0
     for line in header_lines[1:]:
         k, v = line.split(":", maxsplit=1)
-        headers[str(k).strip()] = v.strip()
+        key = str(k).strip()
+        if key in headers:
+            count += 1
+            key = key + "#{}".format(count)
+        headers[key] = v.strip()
 
     # print (headers.keys())
     message = SipMessage(headers, body)
@@ -70,8 +74,10 @@ if __name__ == "__main__":
    Expires: 300
    Contact: <sip: 7867113566@10.0.0.2:3566;lr;transport=UDP>
    Via: SIP/2.0/UDP 10.0.0.2:3566;branch=z9hG4bK359368062.17428.1
+   Via: SIP/2.0/UDP 10.0.0.3:3566;branch=z9hG4bK359368062.17428.1
    Via: SIP/2.0/UDP 10.0.0.2:3566;branch=z9hG4bK_STANDARD_reboot_with_Authen_Proxy_3-109_1253634158-1
    Route: <sip:7867113566@10.0.0.2:5060;lr;transport=UDP>
+   Route: <sip:7867113566@10.0.0.3:5060;lr;transport=UDP>
    Path: <sip:10.0.0.2:5060;transport=UDP;lr>
    Max-Forwards: 70
    Content-Length: 0
@@ -80,3 +86,4 @@ if __name__ == "__main__":
     s.make_response_to(j)
     print(s.contents())
     print(j.contents())
+    print(j.headers)

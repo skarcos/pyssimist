@@ -109,7 +109,7 @@ class SipMessage(object):
         else:
             first_line = self.status_line
         result = first_line + "\r\n"
-        result += "\r\n".join(k + ": " + v for k, v in self.header.items())
+        result += "\r\n".join(k.split("#")[0] + ": " + v for k, v in self.header.items())
         result += "\r\n"
         result += "\r\n" + self.body
         return result
