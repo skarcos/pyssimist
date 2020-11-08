@@ -85,8 +85,8 @@ class SipEndpoint(object):
             self.link = client.TLSClient(local_ip, local_port, certificate)
         else:
             raise NotImplementedError("{} client not implemented".format(protocol))
-        self.set_address((local_ip, self.link.port))
         self.link.connect(dest_ip, dest_port)
+        self.set_address((local_ip, self.link.port))
 
     def update_to_tag(self, in_dialog):
         """
