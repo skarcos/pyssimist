@@ -321,7 +321,7 @@ class SipEndpoint(object):
             m.set_dialog_from(dialog)
 
         self.save_message(m)
-        if m.type == "Request" and not m.method == "BYE":
+        if m.type == "Request":
             # This is a new request in the same dialog, so fix the CSeq
             # m.increase_cseq()
             self.start_new_transaction(m.method)
