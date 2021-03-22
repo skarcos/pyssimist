@@ -8,19 +8,20 @@ import threading
 import time
 import traceback
 import types
+import ssl
 from copy import copy
 
 import common.client as my_clients
 from common import util
 from common.tc_logging import debug, warning
-from sip.SipParser import parseBytes as parseSip
+from sip.SipParser import parseBytes as parseSip, buildMessage
 from csta.CstaApplication import CstaApplication
 from csta.CstaParser import parseBytes
 from csta.CstaUser import CstaUser
 from sip.SipEndpoint import SipEndpoint
 
-
 # With help from https://github.com/realpython/materials/blob/master/python-sockets-tutorial/multiconn-server.py
+from sip.messages import message
 
 
 class SipServer:
@@ -28,7 +29,7 @@ class SipServer:
     A simple server to send and receive SIP Messages
     """
 
-    def __init__(self, ip, port, protocol="tcp"):
+    def __init__(self, ip, port, protocol="tcp", certificate=None):
         self.ip = ip
         self.port = port
         self.protocol = protocol
@@ -40,9 +41,13 @@ class SipServer:
         elif protocol in ("udp", "UDP"):
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         elif protocol in ("tls", "TLS"):
+            tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             # for MTLS this might be needed
+            self.context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_1)
+            self.context.load_verify_locations(certificate)
+            self.socket = self.context.wrap_socket(tcp_socket, server_hostname='localhost')
+
             # context.load_cert_chain('/path/to/certchain.pem', '/path/to/private.key')
-            raise NotImplemented
         self.server_thread = None
         self.sip_endpoint = SipEndpoint("PythonSipServer")
         self.handlers = {}
@@ -52,28 +57,64 @@ class SipServer:
         self.buffers = {}
         self.registered_addresses = {}
         self.active_calls = []
-        self.links = {}
+        self.links = []
+        self.register_links = {}
         self.wait_for_message = self.sip_endpoint.wait_for_message
         self.wait_for_messages = self.sip_endpoint.wait_for_messages
         self.set_dialog = self.sip_endpoint.set_dialog
         self.save_message = self.sip_endpoint.save_message
         self.set_transaction = self.sip_endpoint.set_transaction
+        self.on("NOTIFY", self.notify_ok)
+        self.on("OPTIONS", self.options_ok)
         self.lock = threading.Lock()
 
-    def send(self, client_address, *args, **kwargs):
-        with self.lock:
-            self.sip_endpoint.use_link(self.links[client_address.replace("localhost", "127.0.0.1")])
-            return self.sip_endpoint.send(*args, **kwargs)
+    def get_dialog_link(self, dialog):
+        for known_dialog, link in self.links:
+            if known_dialog and (
+                    known_dialog == dialog or self.sip_endpoint.get_complete_dialog(known_dialog) == dialog):
+                return link
+        debug("No link found for dialog {}.\nAvailable dialogs and corresponding links:\n{}".format(dialog, self.links))
 
-    def send_new(self, client_address, *args, **kwargs):
+    def get_address_link(self, address):
+        for known_dialog, link in self.links:
+            if "{}:{}".format(link.rip, link.rport) == address:
+                return link
+        debug(
+            "No link found for address {}.\nAvailable dialogs and corresponding links:\n{}".format(address, self.links))
+
+    def remove_address_link(self, sock):
+        rm_links = []
+        for link in self.links:
+            if link[1].socket == sock:
+                rm_links.append(link)
+        for link in rm_links:
+            self.links.remove(link)
+
+    def remove_dialog(self, dialog):
+        rm_links = []
+        for link in self.links:
+            if link[0] == dialog:
+                rm_links.append(link)
+        for link in rm_links:
+            self.links.remove(link)
+
+    def send(self, dialog, *args, **kwargs):
         with self.lock:
-            self.sip_endpoint.use_link(self.links[client_address.replace("localhost", "127.0.0.1")])
+            self.sip_endpoint.use_link(self.get_dialog_link(dialog))
+            return self.sip_endpoint.send(dialog=dialog, *args, **kwargs)
+
+    def send_new(self, address, *args, **kwargs):
+        with self.lock:
+            link = my_clients.TCPClient(ip=self.ip, port=0)
+            rip, rport = address.split(":")
+            link.connect(rip, int(rport))
+            self.sip_endpoint.use_link(link)
             return self.sip_endpoint.send_new(*args, **kwargs)
 
-    def reply(self, client_address, *args, **kwargs):
+    def reply_to(self, inmessage, *args, **kwargs):
         with self.lock:
-            self.sip_endpoint.use_link(self.links[client_address.replace("localhost", "127.0.0.1")])
-            return self.sip_endpoint.reply(*args, **kwargs)
+            self.sip_endpoint.use_link(self.get_dialog_link(inmessage.get_dialog()))
+            return self.sip_endpoint.send_in_ctx_of(inmessage, *args, **kwargs)
 
     def accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
@@ -100,12 +141,16 @@ class SipServer:
         self.sip_endpoint.link.socket = sock
         #        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sip_endpoint.link.sockfile = sock.makefile(mode='rb')
-        self.links["{}:{}".format(*addr)] = client
+        self.links.append((None, client))
+        # self.links.append(("{}:{}".format(*addr), client))
         return client
 
     def serve_forever(self):
         self.socket.bind((self.ip, self.port))
-        self.socket.listen()
+        if not self.protocol.upper() == "UDP":
+            self.socket.listen()
+        else:
+            self.make_client(self.socket, (self.ip, self.port))
         self.port = self.socket.getsockname()[1]
         print("listening on", (self.ip, self.port))
         self.socket.setblocking(False)
@@ -115,7 +160,7 @@ class SipServer:
             try:
                 events = self.sel.select(timeout=60)
                 for key, mask in events:
-                    if key.data is None:
+                    if key.data is None and self.protocol.upper() != "UDP":
                         self.accept_wrapper(key.fileobj)
                     else:
                         self.service_connection(key, mask)
@@ -131,11 +176,14 @@ class SipServer:
                 self.shutdown()
             except:
                 debug(traceback.format_exc())
-                break
+                self.remove_address_link(key.fileobj)
+                self.sel.unregister(key.fileobj)
+
         self.sel.unregister(self.socket)
         # self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
         self.sel.close()
+        self.shutdown()
 
     def wait_shutdown(self):
         time.sleep(3)
@@ -183,6 +231,8 @@ class SipServer:
                     action(self, message, *args)
                 except IndexError:
                     break
+                except:
+                    traceback.print_exc()
 
     def update(self, inmessage):
         # last_sent_message = self.sip_endpoint.get_last_message_in(dialog)
@@ -209,7 +259,8 @@ class SipServer:
         address = "{}:{}".format(*data.addr)
         if mask & selectors.EVENT_READ:
             try:
-                inbytes = self.sip_endpoint.link.waitForSipData(timeout=5.0, client=self.links[address])
+                link = self.get_address_link(address)
+                inbytes = self.sip_endpoint.link.waitForSipData(timeout=5.0, client=link)
                 if inbytes is None:
                     self.sip_endpoint.link.socket.close()
                     self.sel.unregister(self.sip_endpoint.link.socket)
@@ -219,6 +270,7 @@ class SipServer:
                 if not in_dialog["to_tag"] and {"Call-ID": in_dialog["Call-ID"],
                                                 "from_tag": in_dialog["from_tag"]} in self.sip_endpoint.dialogs:
                     self.sip_endpoint.dialogs.append(in_dialog)
+                self.links.append((in_dialog, link))
                 if inmessage.get_status_or_method() in self.handlers:
                     self.events[inmessage.get_status_or_method()].set()
                     self.buffers[inmessage.get_status_or_method()].append(inmessage)
@@ -242,7 +294,20 @@ class SipServer:
                 return call[1]
             elif dialog == call[1]:
                 return call[0]
+        print(dialog, "not in:", self.active_calls)
         return None
+
+    @staticmethod
+    def options_ok(self, inmessage):
+        self.reply_to(inmessage, message["200_OK_1"])
+        self.remove_dialog(inmessage.get_dialog())
+
+    @staticmethod
+    def notify_ok(self, inmessage):
+        notify_response = buildMessage(message["200_OK_Notify"])
+        notify_response.make_response_to(inmessage)
+        notify_response["Contact"] = inmessage["Contact"]
+        self.reply_to(inmessage, notify_response.contents())
 
 
 class CstaServer(SipServer):
