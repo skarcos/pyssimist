@@ -7,6 +7,7 @@ from sip.SipMessage import SipMessage
 
 ENCODING = "utf8"
 MANDATORY_REQUEST_HEADERS = {"To", "From", "CSeq", "Call-ID", "Max-Forwards"}
+SPECIAL_CASE_HEADERS = {"Call-ID", "CSeq", "X-Siemens-OSS"}
 
 
 def buildMessage(message, parameters={}):
@@ -35,7 +36,16 @@ def parseBytes(bString, sep="\r\n", encoding=ENCODING):
         headers[key] = v.strip()
 
     # print (headers.keys())
-    message = SipMessage(headers, body)
+    titled_headers = dict((h.title(), headers[h]) for h in headers)
+    case_switched_headers = {}
+    for h in titled_headers:
+        case_switched_headers[h] = titled_headers[h]
+        for special_h in SPECIAL_CASE_HEADERS:
+            if h.capitalize() == special_h.capitalize():
+                case_switched_headers.pop(h)
+                case_switched_headers[special_h] = titled_headers[h]
+                break
+    message = SipMessage(case_switched_headers, body)
     # add more elements depending if it is a request or a responses
     resP = re.match(r"^SIP/\d\.?\d? (\d+ .*)$", request_or_response, re.I)
     if resP:
@@ -49,7 +59,10 @@ def parseBytes(bString, sep="\r\n", encoding=ENCODING):
             # return None
 
         # make sure all mandatory headers are present
-        missing_headers = MANDATORY_REQUEST_HEADERS.difference(set(headers.keys()))
+        capital_mandatory_headers = set(h.capitalize() for h in MANDATORY_REQUEST_HEADERS)
+        capital_message_headers = set(h.capitalize() for h in headers.keys())
+        missing_headers = capital_mandatory_headers.difference(capital_message_headers)
+        # missing_headers = MANDATORY_REQUEST_HEADERS.difference(set(headers.keys()))
         if missing_headers:
             raise Exception("Mandatory headers missing", missing_headers)
             # return None
@@ -84,6 +97,41 @@ if __name__ == "__main__":
 '''
     j = buildMessage(i, {})
     s.make_response_to(j)
-    print(s.contents())
+    x = '''SIP/2.0 202 Accepted
+Via: SIP/2.0/TCP esrp.rnspn1.rnsp.california.ng911:5060;branch=z9hG4bKSEC-4d2a050a-4f2a050a-1-H666LTmfe6
+record-route: <sip:10.5.42.58:50202;transport=tcp;gwIP=esrp.lane1.dc1.california.ng911~5060~tcp~tcp-5060-tls-5061;oss=bcf-10.09.00.00-1;ftag=snl_0qe665y4ZJ;lr>
+contact: <sip:esrpn1@10.5.42.58:50202;transport=tls>
+To: "esrpn1" <sip:esrpn1@esrp.lane1.dc1.california.ng911:5060>;tag=SEC11-20ea8c0-60ea8c0-1-w99HwH86Rdgx
+From: <sip:rnspn1@esrp.rnspn1.rnsp.california.ng911:5060>;tag=snl_0qe665y4ZJ
+X-Siemens-OSS: OpenScape SBC V10 R9.00.00-1/BCF/THIG
+Date: Thu, 14 Jan 2021 08:57:17 GMT
+call-id: SEC11-4d2a050a-4f2a050a-1-72tEETFIm13o
+cseq: 1235 SUBSCRIBE
+expires: 2811
+content-length: 0'''
+    y = '''NOTIFY sip:rnspn1@esrp.rnspn1.rnsp.california.ng911:5060;transport=tcp SIP/2.0
+Via: SIP/2.0/TCP [fd00:10:2:8::4]:5061;branch=z9hG4bKdc13.38795be9c926ccdf9ce6c0ba3a91cee9.0;i=16
+max-forwards: 69
+contact: <sip:esrpn1@esrp.lane1.dc1.california.ng911:5060;transport=tcp>
+to: "rnspn1" <sip:rnspn1@esrp.rnspn1.rnsp.california.ng911:5061;transport=tls>;tag=snl_0qe665y4ZJ
+from: "esrpn1" <sip:esrpn1@esrp.lane1.dc1.california.ng911:5061;transport=tls>;tag=SEC11-20ea8c0-60ea8c0-1-w99HwH86Rdgx
+Date: Thu, 14 Jan 2021 08:57:17 GMT
+call-id: SEC11-4d2a050a-4f2a050a-1-72tEETFIm13o
+cseq: 1 NOTIFY
+content-type: application/vnd.nena.ElementState+xml
+subscription-state: active;expires=2811
+event: nena-ElementState
+content-length: 220
+X-Siemens-OSS: OpenScape SBC V10 R9.00.00-1/BCF/THIG
+
+<?xml version="1.0" encoding="UTF-8" ?>
+<?xml-stylesheet type="text/xsl" href="elementState.xsl"?>
+<ElementState>
+    <State>Normal</State>
+    <Reason>The element is operating normally.</Reason>
+</ElementState>'''
+    # print(s.contents())
     print(j.contents())
     print(j.headers)
+    print(buildMessage(x, {}).contents())
+    print(buildMessage(y, {}).contents())
