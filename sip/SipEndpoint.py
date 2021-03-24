@@ -205,8 +205,6 @@ class SipEndpoint(object):
     def save_message(self, message):
         """ Search for previously received message in the same dialog.
             If found, replace with given message, otherwise append message to message list """
-        if message.get_status_or_method() in ("ACK", "CANCEL"):
-            return
         for i in range(len(self.last_messages_per_dialog)):
             if message.get_dialog() == self.last_messages_per_dialog[i].get_dialog():
                 self.last_messages_per_dialog[i] = message
@@ -217,16 +215,20 @@ class SipEndpoint(object):
         """ Refresh the via branch and CSeq header """
         if not dialog:
             dialog = self.current_dialog
+        try:
+            last_message_in_dialog = self.get_last_message_in(dialog)
+        except:
+            last_message_in_dialog = None
         if method in ("ACK", "CANCEL"):
             # Not really a new transaction
             # find transaction from last message in dialog
-            transaction = self.get_last_message_in(dialog).get_transaction()
+            transaction = last_message_in_dialog.get_transaction()
             cseq = transaction["cseq"]
             branch = transaction["via_branch"]
-        elif method in self.requests[self.dialogs.index(dialog)]:
-            transaction = self.get_last_message_in(dialog).get_transaction()
+        elif last_message_in_dialog:
+            transaction = last_message_in_dialog.get_transaction()
             cseq = str(int(transaction["cseq"]) + 1)
-            branch = transaction["via_branch"]
+            branch = util.randomBranch()
         else:
             cseq = str(len(self.requests[self.dialogs.index(dialog)]))
             branch = util.randomBranch()
@@ -320,11 +322,11 @@ class SipEndpoint(object):
                 "Attempted to send a {} response in a new dialog".format(m.get_status_or_method())
             m.set_dialog_from(dialog)
 
-        self.save_message(m)
         if m.type == "Request":
             # This is a new request in the same dialog, so fix the CSeq
             # m.increase_cseq()
             self.start_new_transaction(m.method)
+        self.save_message(m)
 
         m.set_transaction_from(self.current_transaction)
 
