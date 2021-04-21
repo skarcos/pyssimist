@@ -117,4 +117,3 @@ class CstaMessage(object):
 if __name__ == "__main__":
     print(is_response("GetAgentStateResponse"))
     print(is_request("GetAgentStateResponse"))
-    pass

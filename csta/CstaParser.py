@@ -31,11 +31,13 @@ def parseBytes(bString):
     try:
         body = bString[8:].strip().decode(encoding)
     except:
+        print("Cannot decode CSTA message with ", encoding)
         print(bString)
         raise
     try:
         root = ET.fromstring(body)
     except:
+        print("Cannot parse CSTA message string:")
         print(header)
         print(body)
         raise
