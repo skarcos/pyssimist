@@ -131,7 +131,33 @@ X-Siemens-OSS: OpenScape SBC V10 R9.00.00-1/BCF/THIG
     <Reason>The element is operating normally.</Reason>
 </ElementState>'''
     # print(s.contents())
-    print(j.contents())
-    print(j.headers)
-    print(buildMessage(x, {}).contents())
-    print(buildMessage(y, {}).contents())
+    ack = '''    ACK sip:302102433001@10.2.31.5:23001;transport=TCP SIP/2.0
+    To: <sip:432001@10.2.31.5>;tag=605b7f97rxqy
+    From: "Line31001" <sip:431001@10.3.28.112>;tag=snl_Pn97QmG639
+    Call-ID: SEC11-6a1c030a-6b1c030a-1-38N4keA0mC7X
+    CSeq: 1235 ACK
+    Contact: <sip:431001@10.3.28.112:5060;transport=tcp;maddr=10.3.28.112>
+    Via: SIP/2.0/TCP 10.3.28.112:5060;branch=z9hG4bKSEC-6a1c030a-6b1c030a-1-DIXL92Tf3A
+    Allow: REGISTER, INVITE, ACK, BYE, CANCEL, NOTIFY, REFER, INFO
+    Date: Wed, 24 Mar 2021 18:06:16 GMT
+    Max-Forwards: 69
+    Content-Length: 0'''
+    bye = 'BYE sip:SUB_A_ext5@dest_ip:5060;transport=transport;maddr=dest_ip SIP/2.0\n' \
+          'Max-Forwards: 70\n' \
+          'From: "Line32001" <sip:SUB_B@local_ip:23001>;tag=SubC0-128_33b5341b194b49304833e5e8354c10e9-0\n' \
+          'To: <sip:SUB_A_ext5@dest_ip>;tag=snl_6AL2CobU0a\n' \
+          'Call-ID: SEC11-a7d980a-a7d980a-1-REgtx7XF0W45\n' \
+          'Supported: timer\n' \
+          'User-Agent: optiPoint 410_420/V7 V7 R0.11.0 M5T SIP Stack/4.0.24.24\n' \
+          'CSeq: 1 BYE\n' \
+          'Via: SIP/2.0/tcp local_ip:23001;branch=z9hG4bK1765806562.2480.1\n' \
+          'Content-Length: 0\n' \
+          '\n'
+    ackm = buildMessage(ack, {})
+    print(ackm.contents())
+    byem = buildMessage(bye, {})
+    print(byem.contents())
+    byem.make_response_to(ackm)
+    print(byem.contents())
+
+

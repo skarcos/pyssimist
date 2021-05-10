@@ -12,6 +12,10 @@ import sip.SipFlows as flow
 from copy import copy
 
 
+def dialog_hash(dialog):
+    return "|".join([dialog["Call-ID"], dialog["from_tag"], dialog["to_tag"]])
+
+
 class SipEndpoint(object):
     """\
     Representation of a SIP Endpoint
@@ -42,7 +46,7 @@ class SipEndpoint(object):
             "to_tag": None
             # "epid": None,
         }
-
+        self.tags = {}
         self.current_transaction = {"via_branch": None,
                                     "cseq": "0",
                                     "method": None
@@ -95,10 +99,14 @@ class SipEndpoint(object):
         :return: None
         """
         for dialog in self.dialogs:
+
             if dialog["Call-ID"] == in_dialog["Call-ID"] \
                     and dialog["from_tag"] == in_dialog["from_tag"] \
                     and not dialog["to_tag"]:
+                dhash = dialog_hash(dialog)
                 dialog["to_tag"] = in_dialog["to_tag"]
+                dhash_complete = dialog_hash(dialog)
+                self.tags[dhash_complete] = self.tags[dhash]
 
     def get_complete_dialog(self, in_dialog):
         """
@@ -156,12 +164,26 @@ class SipEndpoint(object):
         if dialog not in self.dialogs:
             self.dialogs.append(dialog)
             self.requests.append([])
+            # If we don't know this dialog it means we didn't started so it must be an incoming Request
+            self.tags[dialog_hash(dialog)] = "to_tag"
         dialog = self.get_complete_dialog(dialog)
         self.current_dialog = dialog
         self.parameters["callId"] = self.current_dialog["Call-ID"]
         self.parameters["fromTag"] = self.current_dialog["from_tag"]
         self.parameters["toTag"] = self.current_dialog["to_tag"]
         return dialog
+
+    def switch_tags(self, dialog=None):
+        if not dialog:
+            dialog = self.current_dialog
+        dhash = dialog_hash(dialog)
+        dialog["from_tag"], dialog["to_tag"] = dialog["to_tag"], dialog["from_tag"]
+        dhash_switched = dialog_hash(dialog)
+        self.set_dialog(dialog)
+        if self.tags[dhash] == "to_tag":
+            self.tags[dhash_switched] = "from_tag"
+        else:
+            self.tags[dhash_switched] = "to_tag"
 
     def set_transaction(self, transaction):
         """ Change current transaction to the one provided """
@@ -182,6 +204,7 @@ class SipEndpoint(object):
             # "epid": lambda x=6: "SC" + util.randStr(x),
         }
         self.current_dialog = dialog
+        self.tags[dialog_hash(dialog)] = "from_tag"
         self.dialogs.append(dialog)
         self.requests.append([])
         return dialog
@@ -219,27 +242,23 @@ class SipEndpoint(object):
             last_message_in_dialog = self.get_last_message_in(dialog)
         except:
             last_message_in_dialog = None
+        branch = util.randomBranch()
         if method in ("ACK", "CANCEL"):
             # Not really a new transaction
             # find transaction from last message in dialog
+            # which should not be none because what are we sending ACK or CANCEL to?
             transaction = last_message_in_dialog.get_transaction()
             cseq = transaction["cseq"]
-            branch = transaction["via_branch"]
         elif last_message_in_dialog:
             transaction = last_message_in_dialog.get_transaction()
             cseq = str(int(transaction["cseq"]) + 1)
-            branch = util.randomBranch()
         else:
             cseq = str(len(self.requests[self.dialogs.index(dialog)]))
-            branch = util.randomBranch()
             if method != "REGISTER":
                 # Ignore REGISTER otherwise unregister breaks
                 # TODO: check if reRegistrations will work
                 self.requests[self.dialogs.index(dialog)].append(method)
-        transaction = {}
-        transaction["via_branch"] = branch
-        transaction["cseq"] = cseq  # str(int(self.current_transaction["cseq"]) + 1)
-        transaction["method"] = method
+        transaction = {"via_branch": branch, "cseq": cseq, "method": method}
         self.current_transaction = transaction
         return transaction
 
@@ -301,38 +320,40 @@ class SipEndpoint(object):
 
     def reply(self, message_string, dialog=None):
         """ Send a response to a previously received message """
-        if dialog:
-            dialog = self.set_dialog(dialog)
-        else:
-            dialog = self.current_dialog
-
         if "callId" not in self.parameters or not self.parameters['callId']:
             raise Exception("Cannot reply when we are not in a dialog")
 
         m = buildMessage(message_string, self.parameters)
 
+        if dialog:
+            dialog = self.set_dialog(dialog)
+        else:
+            dialog = self.current_dialog
+
         try:
             previous_message = self.get_last_message_in(dialog)
             m.make_response_to(previous_message)
             self.update_to_tag(m.get_dialog())
-        except:
+        except:  # caused by get_last_message_in(dialog) if no message has been exchanged in this dialog yet
             # New dialog, same call-id, eg NOTIFY after Keyset SUBSCRIBE.
-            # Must be a SIP Response
+            # Must be a SIP Request
+            previous_message = None
             assert m.type == "Request", \
                 "Attempted to send a {} response in a new dialog".format(m.get_status_or_method())
-            m.set_dialog_from(dialog)
 
         if m.type == "Request":
             # This is a new request in the same dialog, so fix the CSeq
             # m.increase_cseq()
             self.start_new_transaction(m.method)
+            # If B side sends the new request we must switch from and to tags
+            if previous_message is not None and \
+                    m.method not in ("ACK", "CANCEL") and \
+                    self.tags[dialog_hash(dialog)] == "to_tag":
+                self.switch_tags(dialog)
+            m.set_dialog_from(dialog)
         self.save_message(m)
 
         m.set_transaction_from(self.current_transaction)
-
-        # TODO: fix CSeq according to RFC3261 and ACK according to section 17.1.1.3
-        #            self.parameters["cseq"] += 1
-        #            m["CSeq"] = "{} {}".format(self.parameters["cseq"], m.method)
         self.link.send(m.contents())
         return m
 

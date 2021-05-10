@@ -179,7 +179,12 @@ class SipMessage(object):
         self.via_branch = other.via_branch
         self["From"] = other["From"]
         self["Call-ID"] = other["Call-ID"]
-        self["Via"] = other["Via"]
+        if self.type == "Response":
+            # Update Via only when we send a response.
+            # Otherwise adjust this request for the current dialog
+            self["Via"] = other["Via"]
+        # else:
+        #     self["Via"] = "SIP/2.0/{} {}:{};branch={}".format(self.proto, self.ip, self.port, self.via_branch)
         self["To"] = other["To"]
         if not other.to_tag:
             # This is useful when we make a response to an initial invite.
