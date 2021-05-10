@@ -12,7 +12,7 @@ class CstaUser:
         self.busy = False
         self.csta_application = csta_application
         self.monitorCrossRefID = None
-        self.callID = []
+        self.callID = None
         # Transactions are a dictionary of eventid to request eg {353: "MakeCall"}
         self.inc_transactions = {}
         self.out_transactions = {}
@@ -20,11 +20,12 @@ class CstaUser:
         self.parameters = {"monitorCrossRefID": self.monitorCrossRefID,
                            "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
                            "CSTA_USE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
+                           "callID": self.callID,
                            "deviceID": self.deviceID}
 
     def get_transaction_id(self, message):
         """ Determine what the correct eventID is for an outgoing message based on the current state and the message.
-         EventID and transactionID can be called InvokeID sometimes"""
+         EventID and transactionID can be called InvokeID sometimes, like... always"""
         if is_response(message):
             # make sure that this response belongs to an active transaction, for instance if MakeCallResponse is
             # received, make sure there is a MakeCall in our active transactions
@@ -88,6 +89,13 @@ class CstaUser:
             self.csta_application.min_event_id = max(self.csta_application.min_event_id, message.eventid + 1)
         else:
             assert message.is_event(), "Message {} is not a response, request or event".format(message.event)
+
+    def update_connection_id(self, message):
+        if message["deviceID"] and message["callID"]:
+            self.callID = message["callID"]
+            self.deviceID = message["deviceID"]
+            self.set_parameter("callID", self.callID)
+            self.set_parameter("deviceID", self.deviceID)
 
     def monitor_start(self):
         return self.csta_application.monitor_start(self.number)

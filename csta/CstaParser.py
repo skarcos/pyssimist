@@ -14,8 +14,13 @@ def buildMessageFromFile(filename, parameters, eventid):
         return buildMessage(file.read(), parameters, eventid)
 
 
-def buildMessage(message, parameters, eventid):
-    xml_encoding = re.search("encoding=[\'\"](\S*)[\'\"].* ?\?\>", message).group(1)
+def buildMessage(message, parameters={}, eventid=0):
+    encoding_search = re.search("encoding=[\'\"](\S*)[\'\"].* ?\?\>", message)
+    if not encoding_search:
+        print("Warning: Not encoding defined in message:", message)
+        xml_encoding = ENCODING
+    else:
+        xml_encoding = encoding_search.group(1)
     tString = message.strip().format(**parameters)
     # bString=bytes(tString.replace("\n","\r\n")+2*"\r\n",encoding=xml_encoding)
     bString = bytes("%04d" % eventid + tString, encoding=xml_encoding)
@@ -25,8 +30,11 @@ def buildMessage(message, parameters, eventid):
 
 
 def parseBytes(bString):
-    xml_encoding = re.search(b"encoding=[\'\"](\S*)[\'\"].* ?\?\>", bString).group(1)
-    encoding = xml_encoding.decode(encoding=ENCODING)
+    try:
+        xml_encoding = re.search(b"encoding=[\'\"](\S*)[\'\"].* ?\?\>", bString).group(1)
+        encoding = xml_encoding.decode(encoding=ENCODING)
+    except AttributeError:
+        encoding = ENCODING
     header = bString[:8]
     try:
         body = bString[8:].strip().decode(encoding)
@@ -102,8 +110,17 @@ if __name__ == "__main__":
 </SystemStatus>''')
     b.append('''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns3:SystemStatus xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4"/>''')
     b.append('''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns3:MonitorStart xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><ns3:monitorObject><ns3:deviceObject typeOfNumber="dialingNumber">3021033</ns3:deviceObject></ns3:monitorObject></ns3:MonitorStart>''')
+    b.append('<?xml version="1.0" encoding="utf-8"?><DeflectCall><callToBeDiverted><deviceID>SUB_C</deviceID><callID>FF000100000000006BB1234C31000000</callID></callToBeDiverted><newDestination>SUB_D</newDestination></DeflectCall>')
     for i in a:
         print(parseBytes(i))
     for j in b:
-        print(buildMessage(j, {"user": "12313213"}, eventid=2222))
+        m = buildMessage(j, {"user": "12313213"}, eventid=2222)
+        if m["deviceID"] and m["callID"]:
+            print(m["deviceID"], m["callID"])
+            m["deviceID"] = "user.deviceID"
+            m["callID"] = "user.callID"
+            print(m["deviceID"], m["callID"])
+        print(m)
     last = buildMessage(j, {"user": "12313213"}, eventid=2222)["deviceObject"]
+
+

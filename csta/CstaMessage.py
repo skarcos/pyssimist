@@ -63,7 +63,7 @@ class CstaMessage(object):
     def is_event(self):
         return is_event(self.event)
 
-    def __getitem__(self, key):
+    def find_element(self, key):
         element = None
         for tag in self.body.iter():
             element = tag.find(key)
@@ -75,13 +75,17 @@ class CstaMessage(object):
                     element = tag
             if element is not None:
                 break
+        return element
+
+    def __getitem__(self, key):
+        element = self.find_element(key)
         if element is None:
             return None
         else:
             return element.text
 
     def __setitem__(self, key, value):
-        element = self.body.find("{" + self.namespace + "}" + key)
+        element = self.find_element(key)
         element.text = value
 
     def __repr__(self):
@@ -93,10 +97,7 @@ class CstaMessage(object):
         return result.getvalue().decode(encoding=self.encoding)
 
     def __str__(self):
-        if self.str_body:
-            return self.str_body
-        else:
-            return repr(self)
+        return repr(self)
 
     def message(self):
         return str(self)
