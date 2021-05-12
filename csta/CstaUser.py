@@ -93,9 +93,7 @@ class CstaUser:
     def update_connection_id(self, message):
         if message["deviceID"] and message["callID"]:
             self.callID = message["callID"]
-            self.deviceID = message["deviceID"]
             self.set_parameter("callID", self.callID)
-            self.set_parameter("deviceID", self.deviceID)
 
     def monitor_start(self):
         return self.csta_application.monitor_start(self.number)
