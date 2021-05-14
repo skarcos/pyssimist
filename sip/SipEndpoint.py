@@ -53,6 +53,7 @@ class SipEndpoint(object):
                                     }
 
         self.waitForMessage = self.wait_for_message  # compatibility alias
+        self.reply_to = self.send_in_ctx_of  # method alias
         self.secondary_lines = []
         self.message_buffer = []
         self.registered = False

@@ -17,7 +17,7 @@ def buildMessageFromFile(filename, parameters, eventid):
 def buildMessage(message, parameters={}, eventid=0):
     encoding_search = re.search("encoding=[\'\"](\S*)[\'\"].* ?\?\>", message)
     if not encoding_search:
-        print("Warning: Not encoding defined in message:", message)
+        print("Warning: No encoding defined in message:", message)
         xml_encoding = ENCODING
     else:
         xml_encoding = encoding_search.group(1)
