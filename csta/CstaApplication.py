@@ -113,11 +113,11 @@ class CstaApplication:
             m = buildMessage(message, user.parameters, eventid=0)
         else:
             m = buildMessageFromFile(get_xml(message), user.parameters, eventid=0)
+        user.set_parameter("callingDevice", from_user)
+        user.set_parameter("calledDirectoryNumber", to_user)
         if from_user and m.event != "MonitorStart":
             assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(
                 from_user)
-        user.set_parameter("callingDevice", from_user)
-        user.set_parameter("calledDirectoryNumber", to_user)
         with self.lock:
             # must do this serially to avoid sending multiple requests with the same invoke id
             eventid = user.get_transaction_id(m.event)
