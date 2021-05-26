@@ -109,12 +109,12 @@ class CstaApplication:
         if isinstance(to_user, CstaUser):
             to_user = to_user.number
         user = self.users[from_user]
+        user.set_parameter("callingDevice", from_user)
+        user.set_parameter("calledDirectoryNumber", to_user)
         if message.strip().startswith("<?xml"):
             m = buildMessage(message, user.parameters, eventid=0)
         else:
             m = buildMessageFromFile(get_xml(message), user.parameters, eventid=0)
-        user.set_parameter("callingDevice", from_user)
-        user.set_parameter("calledDirectoryNumber", to_user)
         if from_user and m.event != "MonitorStart":
             assert from_user in self.get_monitored_users(), "User {} must be monitored before sending messages".format(
                 from_user)
