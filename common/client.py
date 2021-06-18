@@ -36,15 +36,14 @@ class TCPClient(object):
 
     def send(self, data, encoding="utf8"):
         # self.socket.sendall(binascii.hexlify(bytes(data,"utf8")))
-        self.send_lock.acquire()
-        if type(data) == type(b''):
-            self.socket.sendall(data)
-            debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
-                                                                                                               "\n"))
-        else:
-            self.socket.sendall(bytes(data, encoding))
-            debug("Sent from port {}:\n\n".format(self.port) + data.replace("\r\n", "\n"))
-        self.send_lock.release()
+        with self.send_lock:
+            if type(data) == type(b''):
+                self.socket.sendall(data)
+                debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
+                                                                                                                   "\n"))
+            else:
+                self.socket.sendall(bytes(data, encoding))
+                debug("Sent from port {}:\n\n".format(self.port) + data.replace("\r\n", "\n"))
 
     def waitForData(self, timeout=None, buffer=4096):
         debug("Waiting on port {}".format(self.port))
@@ -62,50 +61,48 @@ class TCPClient(object):
     def waitForSipData(self, timeout=None, client=None):
         if not client:
             client = self
-        client.wait_lock.acquire()
-        debug("Waiting on port {}".format(client.port))
-        bkp = client.socket.gettimeout()
-        data = b""
-        if timeout:
-            client.socket.settimeout(timeout)
-        try:
-            data = wait_for_sip_data(client.sockfile)
-        except ValueError:
-            debug(data.decode())
-            # debug(line.decode())
-            raise
-        except socket.timeout:
-            debug('Data received before timeout: "{}"'.format(data.decode()))
-            raise
-        finally:
-            client.socket.settimeout(bkp)
-        debug("Received on port {}:\n\n".format(client.port) + data.decode("utf8").replace("\r\n", "\n"))
-        client.wait_lock.release()
-        return data
+        with client.wait_lock:
+            debug("Waiting on port {}".format(client.port))
+            bkp = client.socket.gettimeout()
+            data = b""
+            if timeout:
+                client.socket.settimeout(timeout)
+            try:
+                data = wait_for_sip_data(client.sockfile)
+            except ValueError:
+                debug(data.decode())
+                # debug(line.decode())
+                raise
+            except socket.timeout:
+                debug('Data received before timeout: "{}"'.format(data.decode()))
+                raise
+            finally:
+                client.socket.settimeout(bkp)
+            debug("Received on port {}:\n\n".format(client.port) + data.decode("utf8").replace("\r\n", "\n"))
+            return data
 
     def waitForCstaData(self, timeout=None):
-        self.wait_lock.acquire()
-        bkp = self.socket.gettimeout()
-        if timeout: self.socket.settimeout(timeout)
-        try:
-            # header = ""
-            # while not header:
-            header = self.socket.recv(4)
-            if not header:
-                # disconnected socket
-                return None
-            datalength = int(''.join(["%02X" % x for x in header]), base=16) - 4
-            data = b''
-            while len(data) < datalength:
-                data += self.socket.recv(datalength - len(data))
-            debug(
-                "Received on port {} message of length {}:\n\n".format(self.port, datalength) + (header + data).decode(
-                    "utf8",
-                    "backslashreplace").replace("\r\n", "\n"))
-        finally:
-            self.socket.settimeout(bkp)
-        self.wait_lock.release()
-        return header + data
+        with self.wait_lock:
+            bkp = self.socket.gettimeout()
+            if timeout: self.socket.settimeout(timeout)
+            try:
+                # header = ""
+                # while not header:
+                header = self.socket.recv(4)
+                if not header:
+                    # disconnected socket
+                    return None
+                datalength = int(''.join(["%02X" % x for x in header]), base=16) - 4
+                data = b''
+                while len(data) < datalength:
+                    data += self.socket.recv(datalength - len(data))
+                debug(
+                    "Received on port {} message of length {}:\n\n".format(self.port, datalength) + (header + data).decode(
+                        "utf8",
+                        "backslashreplace").replace("\r\n", "\n"))
+            finally:
+                self.socket.settimeout(bkp)
+            return header + data
 
 
 class UDPClient(TCPClient):
