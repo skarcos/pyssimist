@@ -7,7 +7,7 @@ import string
 from concurrent.futures import ThreadPoolExecutor
 from itertools import cycle
 from threading import Timer, Thread
-from time import time
+from time import time, sleep
 import re
 import io
 import xml.etree.ElementTree as ET
@@ -329,12 +329,14 @@ class Load(object):
         """
         Every :interval seconds, start :quantity flows
         """
+        t = time()
         for i in range(self.quantity):
             self.run_next_flow()
-        if not self.stopCondition and (self.duration < 0 or time() - self.startTime < self.duration):
-            Timer(self.interval, self.start).start()
-        else:
+        if self.stopCondition or not (self.duration < 0 or time() - self.startTime < self.duration):
             self.stop()
+        else:
+            sleep(max((0, self.interval-time()+t)))
+            self.start()
 
     def stop(self):
         """
@@ -352,9 +354,13 @@ class Load(object):
     def monitor(self):
         while self.active or not self.stopCondition:
             for inst in (ins for ins in self.active if not ins.is_alive()):
-                inst.join()
-                self.active.remove(inst)
-                self.calls["Finished"] += 1
+                try:
+                    inst.join()
+                except:
+                    pass
+                finally:
+                    self.active.remove(inst)
+                    self.calls["Finished"] += 1
 
     def statistics(self):
         self.log.info("{}:{}".format(time(), self.calls))
@@ -371,6 +377,13 @@ class LoadThread(Thread):
         self.exc = False
         try:
             super().run()
-        except:
-            logger.exception("Exception in Thread")
-            self.exc = True
+        except Exception as e:
+            logger.debug("Exception in Thread")
+            self.exc = e
+            raise
+
+    def join(self, timeout=None):
+        if self.exc:
+            raise self.exc
+        else:
+            super().join(timeout)
