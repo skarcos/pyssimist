@@ -9,7 +9,7 @@ from sip.SipParser import parseBytes, buildMessage
 import common.util as util
 import common.client as client
 import sip.SipFlows as flow
-from copy import copy
+from threading import Lock
 
 
 def dialog_hash(dialog):
@@ -59,6 +59,7 @@ class SipEndpoint(object):
         self.registered = False
         self.re_register_timer = None
         self.busy = False
+        self.lock = Lock()
 
     def update_parameters(self, params, force=False):
         """
@@ -99,15 +100,15 @@ class SipEndpoint(object):
         :param in_dialog: the complete dialog
         :return: None
         """
-        for dialog in self.dialogs:
-
-            if dialog["Call-ID"] == in_dialog["Call-ID"] \
-                    and dialog["from_tag"] == in_dialog["from_tag"] \
-                    and not dialog["to_tag"]:
-                dhash = dialog_hash(dialog)
-                dialog["to_tag"] = in_dialog["to_tag"]
-                dhash_complete = dialog_hash(dialog)
-                self.tags[dhash_complete] = self.tags[dhash]
+        with self.lock:
+            for dialog in self.dialogs:
+                if dialog["Call-ID"] == in_dialog["Call-ID"] \
+                        and dialog["from_tag"] == in_dialog["from_tag"] \
+                        and not dialog["to_tag"]:
+                    dhash = dialog_hash(dialog)
+                    dialog["to_tag"] = in_dialog["to_tag"]
+                    dhash_complete = dialog_hash(dialog)
+                    self.tags[dhash_complete] = self.tags[dhash]
 
     def get_complete_dialog(self, in_dialog):
         """
@@ -118,12 +119,13 @@ class SipEndpoint(object):
         """
         if in_dialog["to_tag"]:
             return in_dialog
-        for dialog in self.dialogs:
-            if dialog["Call-ID"] == in_dialog["Call-ID"] \
-                    and dialog["from_tag"] == in_dialog["from_tag"] \
-                    and dialog["to_tag"]:
-                return dialog
-        return in_dialog
+        with self.lock:
+            for dialog in self.dialogs:
+                if dialog["Call-ID"] == in_dialog["Call-ID"] \
+                        and dialog["from_tag"] == in_dialog["from_tag"] \
+                        and dialog["to_tag"]:
+                    return dialog
+            return in_dialog
 
     def set_address(self, address):
         """
@@ -215,25 +217,27 @@ class SipEndpoint(object):
         # If we have received no messages yet return None
         if self.current_dialog == {"Call-ID": None, "from_tag": None, "to_tag": None}:
             return None
-        # First check for complete dialogs
-        for message in self.last_messages_per_dialog:
-            if message.get_dialog() == dialog:
-                return message
-        # Second check for incomplete dialogs
-        for message in self.last_messages_per_dialog:
-            d = message.get_dialog()
-            if d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]:
-                return message
+        with self.lock:
+            # First check for complete dialogs
+            for message in self.last_messages_per_dialog:
+                if message.get_dialog() == dialog:
+                    return message
+            # Second check for incomplete dialogs
+            for message in self.last_messages_per_dialog:
+                d = message.get_dialog()
+                if d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]:
+                    return message
         raise Exception("No message found in dialog {}. Other dialogs active: ".format(dialog, self.dialogs))
 
     def save_message(self, message):
         """ Search for previously received message in the same dialog.
             If found, replace with given message, otherwise append message to message list """
-        for i in range(len(self.last_messages_per_dialog)):
-            if message.get_dialog() == self.last_messages_per_dialog[i].get_dialog():
-                self.last_messages_per_dialog[i] = message
-                return
-        self.last_messages_per_dialog.append(message)
+        with self.lock:
+            for i in range(len(self.last_messages_per_dialog)):
+                if message.get_dialog() == self.last_messages_per_dialog[i].get_dialog():
+                    self.last_messages_per_dialog[i] = message
+                    return
+            self.last_messages_per_dialog.append(message)
 
     def start_new_transaction(self, method, dialog=None):
         """ Refresh the via branch and CSeq header """
@@ -254,11 +258,12 @@ class SipEndpoint(object):
             transaction = last_message_in_dialog.get_transaction()
             cseq = str(int(transaction["cseq"]) + 1)
         else:
-            cseq = str(len(self.requests[self.dialogs.index(dialog)]))
-            if method != "REGISTER":
-                # Ignore REGISTER otherwise unregister breaks
-                # TODO: check if reRegistrations will work
-                self.requests[self.dialogs.index(dialog)].append(method)
+            with self.lock:
+                cseq = str(len(self.requests[self.dialogs.index(dialog)]))
+                if method != "REGISTER":
+                    # Ignore REGISTER otherwise unregister breaks
+                    # TODO: check if reRegistrations will work
+                    self.requests[self.dialogs.index(dialog)].append(method)
         transaction = {"via_branch": branch, "cseq": cseq, "method": method}
         self.current_transaction = transaction
         return transaction
@@ -352,6 +357,8 @@ class SipEndpoint(object):
                     self.tags[dialog_hash(dialog)] == "to_tag":
                 self.switch_tags(dialog)
             m.set_dialog_from(dialog)
+        else:
+            self.free_resources(m)
         self.save_message(m)
 
         m.set_transaction_from(self.current_transaction)
@@ -466,6 +473,7 @@ class SipEndpoint(object):
                                                           message_type,
                                                           transaction["method"])
             self.update_to_tag(inmessage.get_dialog())
+            self.free_resources(inmessage)
         self.set_dialog(inmessage.get_dialog())
         return inmessage
 
@@ -543,3 +551,21 @@ class SipEndpoint(object):
             self.re_register_timer.cancel()
         flow.unregister(self)
         self.registered = False
+
+    def free_resources(self, message):
+        """ Free memory allocated to a cleared call """
+
+        status_or_method = message.get_status_or_method()
+        cseq_method = message["CSeq"].split()[1]
+        call_ended_successfully = status_or_method.startswith("2") and cseq_method in ("BYE", "CANCEL")
+        call_rejected_with_error = status_or_method[0] in "3456"
+        if call_ended_successfully or call_rejected_with_error:
+            dialog = message.get_dialog()
+            with self.lock:
+                dialog_index = self.dialogs.index(dialog)
+                # self.dialogs.pop(dialog_index)
+                # self.requests.pop(dialog_index)
+                # self.tags.pop(dialog_hash(dialog))
+                # self.last_messages_per_dialog.pop(dialog_index)
+                print("Cleared call number", dialog_index, "after message", status_or_method, "with cseq", cseq_method,
+                      ". Sizes are", len(self.dialogs), len(self.requests), len(self.tags))
