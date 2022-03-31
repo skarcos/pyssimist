@@ -92,7 +92,7 @@ def wait_for_sip_data(sockfile):
         if not line.strip():
             break
         header, value = [x.strip() for x in line.split(b":", 1)]
-        if header == b"Content-Length":
+        if header == b"Content-Length" or header == b"content-length":
             content_length = int(value)
 
     if content_length > 0:
@@ -323,20 +323,23 @@ class Load(object):
         st_logger.addHandler(handler)
         self.log = st_logger
         self.calls = {"Started": 0, "Finished": 0}
+        self.loop = LoadThread(target=self._start)
         self.statistics()
 
     def start(self):
+        self.loop.start()
+
+    def _start(self):
         """
         Every :interval seconds, start :quantity flows
         """
-        t = time()
-        for i in range(self.quantity):
-            self.run_next_flow()
-        if self.stopCondition or not (self.duration < 0 or time() - self.startTime < self.duration):
-            self.stop()
-        else:
-            sleep(max((0, self.interval-time()+t)))
-            self.start()
+        while not (self.stopCondition or not (self.duration < 0 or time() - self.startTime < self.duration)):
+            t = time()
+            for i in range(self.quantity):
+                self.run_next_flow()
+                sleep(max((0, self.interval-time()+t)))
+
+        self.stop()
 
     def stop(self):
         """
@@ -353,6 +356,7 @@ class Load(object):
 
     def monitor(self):
         while self.active or not self.stopCondition:
+            sleep(0.1)
             for inst in (ins for ins in self.active if not ins.is_alive()):
                 try:
                     inst.join()
@@ -361,6 +365,7 @@ class Load(object):
                 finally:
                     self.active.remove(inst)
                     self.calls["Finished"] += 1
+        self.loop.join()
 
     def statistics(self):
         self.log.info("{}:{}".format(time(), self.calls))
