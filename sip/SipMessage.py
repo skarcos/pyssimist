@@ -115,7 +115,10 @@ class SipMessage(object):
         return result
 
     def get_transaction(self):
-        cseq, method = self.header["CSeq"].split()
+        try:
+            cseq, method = self.header["CSeq"].split()
+        except:
+            cseq, method = self.header["cseq"].split()
         return {"via_branch": self.via_branch,
                 "cseq": cseq,
                 "method": method
