@@ -7,10 +7,11 @@ from time import sleep
 sys.path.append(os.path.join("..", ".."))
 from common.tc_logging import LOG_CONFG
 from common.util import Load
-# from sip.SipEndpoint import SipEndpoint
+from sip.SipEndpoint import SipEndpoint
 from common.view import SipEndpointView, LoadWindow
 from sip.SipFlows import basic_call
 from itertools import cycle
+import yappi
 
 
 def next_available_sip(sip_pool):
@@ -56,7 +57,7 @@ def register(subs, expiration=3600):
 
 
 def connect(subs, sip_server_address, transport="tcp"):
-    # local_address = ("172.25.255.96", 0)
+    # local_address = ("172.25.255.137", 0)
     count = 0
     try:
         os.mkdir("log")
@@ -65,14 +66,20 @@ def connect(subs, sip_server_address, transport="tcp"):
 
     for a in subs:
         count += 1
-        local_address = ("localhost", 65535 - count)
-        a.connect(local_address, sip_server_address, transport)
-        a_logger = logging.getLogger(a.number)
-        a.link.logger = a_logger
-        a_logger.setLevel("DEBUG")
-        handler = logging.handlers.RotatingFileHandler(os.path.join("log", a.number + ".txt"), mode="w",
-                                                       maxBytes=0, backupCount=5)
-        a_logger.addHandler(handler)
+        local_address = ("10.4.253.13", 65535 - count)
+        try:
+            a.connect(local_address, sip_server_address, transport)
+            a_logger = logging.getLogger(a.number)
+            a.link.logger = a_logger
+            a_logger.setLevel("INFO")
+            handler = logging.handlers.RotatingFileHandler(os.path.join("log", a.number + ".txt"), mode="w",
+                                                           maxBytes=10000, backupCount=5)
+            handler.setLevel("INFO")
+            a_logger.addHandler(handler)
+        except OSError:
+            a.busy = True
+            if type(a) is SipEndpointView:
+                a.colour("red")
 
 
 def main():
@@ -82,7 +89,7 @@ def main():
     connect(all_subs, sipsm_address)
     try:
         register(all_subs)
-        test = Load(flow, a_sides, b_sides, interval=1, quantity=3, duration=60)
+        test = Load(flow, a_sides, b_sides, interval=0.1, quantity=5, duration=200)
         print("TEST STARTING")
         test.start()
         print("TEST STARTED")
@@ -93,11 +100,22 @@ def main():
 
 
 if __name__ == "__main__":
-    sipsm_address = ("localhost", 9999)
-    number_of_subs = 100
-    view = LoadWindow()
-    a_subs = [SipEndpointView(view, "302108810" + str(x).zfill(3)) for x in range(int(number_of_subs / 2))]
-    b_subs = [SipEndpointView(view, "302108811" + str(x).zfill(3)) for x in
-              range(int(number_of_subs / 2), number_of_subs)]
-    logging.config.dictConfig(LOG_CONFG)
-    view.start(main)
+    # logging.config.dictConfig(LOG_CONFG)
+    sipsm_address = ("10.9.65.195", 5060)
+    number_of_subs = 1000
+    GUI = True
+    # yappi.start()
+    if not GUI:
+        a_subs = [SipEndpoint("15616920" + str(x).zfill(3)) for x in range(int(number_of_subs / 2))]
+        b_subs = [SipEndpoint("15616920" + str(x).zfill(3)) for x in range(int(number_of_subs / 2), number_of_subs)]
+        main()
+    else:
+        view = LoadWindow()
+        a_subs = [SipEndpointView(view, "15616920" + str(x).zfill(3)) for x in range(int(number_of_subs / 2))]
+        b_subs = [SipEndpointView(view, "15616920" + str(x).zfill(3)) for x in
+                  range(int(number_of_subs / 2), number_of_subs)]
+        view.start(main)
+
+    # yappi.get_func_stats().print_all()
+    #
+    # yappi.get_thread_stats().print_all()

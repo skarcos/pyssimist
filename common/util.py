@@ -322,7 +322,7 @@ class Load(object):
         handler = logging.handlers.RotatingFileHandler("Statistics.txt", mode="w", maxBytes=20000000, backupCount=5)
         st_logger.addHandler(handler)
         self.log = st_logger
-        self.calls = {"Started": 0, "Finished": 0}
+        self.calls = {"Started": 0, "Finished": 0, "Passed": 0}
         self.loop = LoadThread(target=self._start)
         self.statistics()
 
@@ -354,14 +354,23 @@ class Load(object):
         self.active.append(c)
         self.calls["Started"] += 1
 
-    def monitor(self):
+    def monitor(self, max_tracked_errors=30):
         while self.active or not self.stopCondition:
             sleep(0.1)
             for inst in (ins for ins in self.active if not ins.is_alive()):
                 try:
                     inst.join()
-                except:
-                    pass
+                except Exception as e:
+                    key = str(e)
+                    if ": Got" in key:
+                        key = key.split('"')[1]
+                    key = "Failed: " + key
+                    if key in self.calls:
+                        self.calls[key] += 1
+                    elif len(self.calls) < max_tracked_errors:
+                        self.calls[key] = 1
+                else:
+                    self.calls["Passed"] += 1
                 finally:
                     self.active.remove(inst)
                     self.calls["Finished"] += 1

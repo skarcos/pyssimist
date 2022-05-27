@@ -7,19 +7,24 @@ import tkinter.tix as gr
 import threading
 from sip.SipEndpoint import SipEndpoint
 
+MAXROWS = 40
+
 
 class LoadWindow:
     def __init__(self):
         self.root = gr.Tk()
         scroll_window = gr.ScrolledWindow(self.root, width=300, height=800, scrollbar=gr.AUTO)
-        scroll_window.pack()
+        scroll_window.pack(expand=1, fill=gr.BOTH)
         self.window = scroll_window.window
         self.subs = {}
 
     def paint(self, number):
         if number not in self.subs:
+            count = len(self.subs)
+            sub_row = count % MAXROWS
+            sub_col = count // MAXROWS
             frame = gr.Frame(self.window)
-            frame.pack(side=gr.TOP)
+            frame.grid(row=sub_row, column=sub_col)
             frame.label = gr.Label(frame, text=number, width=13)
             frame.arrow = gr.Label(frame, width=3, bg="yellow")
             frame.message = gr.Label(frame, width=30)
