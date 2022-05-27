@@ -2,6 +2,7 @@
 Purpose: Network connection facilities
 Initial Version: Costas Skarakis 11/11/2018
 """
+import selectors
 import socket
 import ssl
 from threading import Lock
@@ -22,6 +23,8 @@ class TCPClient(object):
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.send_lock = Lock()
         self.wait_lock = Lock()
+        self.sel = selectors.DefaultSelector()
+        self.sel.register(self.socket, selectors.EVENT_READ, data=None)
 
     def connect(self, dest_ip, dest_port):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -58,6 +61,10 @@ class TCPClient(object):
                                                                                                              "\n"))
         return data
 
+    def wait_select(self, timeout):
+        if not self.sel.select(timeout):
+            raise socket.timeout("Timeout waiting for data in " + self.ip + ":" + str(self.port))
+
     def waitForSipData(self, timeout=None, client=None):
         if not client:
             client = self
@@ -65,9 +72,8 @@ class TCPClient(object):
             debug("Waiting on port {}".format(client.port))
             bkp = client.socket.gettimeout()
             data = b""
-            if timeout:
-                client.socket.settimeout(timeout)
             try:
+                self.wait_select(timeout)
                 data = wait_for_sip_data(client.sockfile)
             except ValueError:
                 debug(data.decode())
