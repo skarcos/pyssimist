@@ -2,3 +2,16 @@ __pycache__
 ignore
 ????-??-??--??-??-??--???
 .idea
+*.log
+*.zip
+*.gz
+*.bz2
+*.pcap
+*.cap
+*.pcapng
+tshark_tools/*.json
+tshark_tools/*.txt
+venv
+dist
+CallTrace.txt
+Statistics.txt
