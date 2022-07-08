@@ -13,6 +13,7 @@ import io
 import xml.etree.ElementTree as ET
 import logging.handlers
 from common.tc_logging import logger
+import traceback
 
 
 def nowHex():
@@ -72,6 +73,28 @@ def pool(sequence, condition=bool):
             yield c
         else:
             continue
+
+
+def next_available_sip(sip_pool):
+    """Find the next available sip endpoint from a pool of endpoints"""
+    busy = True
+    a = None
+    while busy:
+        a = next(sip_pool)
+        busy = a.busy
+    if type(a).__name__ == "SipEndpointView":
+        a.busy = True
+        a.update_text()
+        a.update_arrow()
+        a.colour("green")
+    return a
+
+
+def make_available_sip(*sip_endpoints):
+    for sip_endpoint in sip_endpoints:
+        sip_endpoint.busy = False
+        if type(sip_endpoint).__name__ == "SipEndpointView":
+            sip_endpoint.colour("yellow")
 
 
 def serverThread(target, *args, **kwargs):
@@ -393,6 +416,7 @@ class LoadThread(Thread):
             super().run()
         except Exception as e:
             logger.debug("Exception in Thread")
+            logger.debug(traceback.format_exc())
             self.exc = e
             raise
 

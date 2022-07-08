@@ -76,7 +76,7 @@ class TCPClient(object):
                 self.wait_select(timeout)
                 data = wait_for_sip_data(client.sockfile)
             except ValueError:
-                debug(data.decode())
+                debug('Value Error: '+data.decode())
                 # debug(line.decode())
                 raise
             except socket.timeout:

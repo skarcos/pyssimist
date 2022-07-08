@@ -539,7 +539,9 @@ class SipEndpoint(object):
 
     def register(self, expiration_in_seconds=360, re_register_time=180):
         """ Convenience function to register a SipEndpoint """
-        if re_register_time:
+        if not expiration_in_seconds:
+            return self.unregister()
+        if re_register_time and self.registered:
             self.re_register_timer = Timer(re_register_time, self.register, (expiration_in_seconds, re_register_time))
             self.re_register_timer.start()
         flow.register(self, expiration_in_seconds)
@@ -567,5 +569,5 @@ class SipEndpoint(object):
                 # self.requests.pop(dialog_index)
                 # self.tags.pop(dialog_hash(dialog))
                 # self.last_messages_per_dialog.pop(dialog_index)
-                print("Cleared call number", dialog_index, "after message", status_or_method, "with cseq", cseq_method,
-                      ". Sizes are", len(self.dialogs), len(self.requests), len(self.tags))
+                # print("Cleared call number", dialog_index, "after message", status_or_method, "with cseq", cseq_method,
+                #       ". Sizes are", len(self.dialogs), len(self.requests), len(self.tags))

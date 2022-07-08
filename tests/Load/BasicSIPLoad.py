@@ -6,34 +6,12 @@ from time import sleep
 
 sys.path.append(os.path.join("..", ".."))
 from common.tc_logging import LOG_CONFG
-from common.util import Load
+from common.util import Load, next_available_sip, make_available_sip
 from sip.SipEndpoint import SipEndpoint
 from common.view import SipEndpointView, LoadWindow
 from sip.SipFlows import basic_call
 from itertools import cycle
 import yappi
-
-
-def next_available_sip(sip_pool):
-    """Find the next available sip endpoint from a pool of endpoints"""
-    busy = True
-    a = None
-    while busy:
-        a = next(sip_pool)
-        busy = a.busy
-    if type(a) is SipEndpointView:
-        a.busy = True
-        a.update_text()
-        a.update_arrow()
-        a.colour("green")
-    return a
-
-
-def make_available_sip(*sip_endpoints):
-    for sip_endpoint in sip_endpoints:
-        sip_endpoint.busy = False
-        if type(sip_endpoint) is SipEndpointView:
-            sip_endpoint.colour("yellow")
 
 
 def flow(pool_a, pool_b):
