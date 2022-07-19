@@ -3,7 +3,7 @@ Purpose: Simulate a CSTA User
 Initial Version: Costas Skarakis 8/7/2020 (Aug 7)
 """
 from common.tc_logging import warning, exception
-from csta.CstaMessage import is_response, is_event, is_request, CstaMessage
+from csta.CstaMessage import is_response, is_event, is_request
 
 
 class CstaUser:
@@ -100,6 +100,15 @@ class CstaUser:
 
     def set_parameter(self, key, value):
         self.parameters[key] = value
+
+    def prepare_message(self, message):
+        """
+        Convert a SIP message string to SipMessage object
+
+        :param message: The message string
+        :return: A CstaMessage object
+        """
+        return self.csta_application.prepare_message(self.number, message)
 
     def send(self, message, to_user=None):
         return self.csta_application.send(message, from_user=self.number, to_user=to_user)

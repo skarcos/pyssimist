@@ -10,6 +10,7 @@ import common.util as util
 import common.client as client
 import sip.SipFlows as flow
 from threading import Lock
+from sip.SipMessage import SipMessage
 
 
 def dialog_hash(dialog):
@@ -115,7 +116,7 @@ class SipEndpoint(object):
         Look for a complete existing dialog in case the provided one doesn't have a to tag
         :param in_dialog: the possibly incomplete dialog
         :return: in_dialog if it is complete or a corresponding complete one is not found,
-                otherwise an existing corresponding complete dialog
+                 otherwise the existing corresponding complete dialog
         """
         if in_dialog["to_tag"]:
             return in_dialog
@@ -164,12 +165,12 @@ class SipEndpoint(object):
         for key in self.current_dialog:
             if key not in dialog:
                 exception("Not a valid dialog. Missing key: " + key)
+        dialog = self.get_complete_dialog(dialog)
         if dialog not in self.dialogs:
             self.dialogs.append(dialog)
             self.requests.append([])
             # If we don't know this dialog it means we didn't started so it must be an incoming Request
             self.tags[dialog_hash(dialog)] = "to_tag"
-        dialog = self.get_complete_dialog(dialog)
         self.current_dialog = dialog
         self.parameters["callId"] = self.current_dialog["Call-ID"]
         self.parameters["fromTag"] = self.current_dialog["from_tag"]
@@ -239,6 +240,15 @@ class SipEndpoint(object):
                     return
             self.last_messages_per_dialog.append(message)
 
+    def prepare_message(self, message):
+        """
+        Convert a SIP message string to SipMessage object
+
+        :param message: The message string
+        :return: A SipMessage object
+        """
+        return buildMessage(message, self.parameters)
+
     def start_new_transaction(self, method, dialog=None):
         """ Refresh the via branch and CSeq header """
         if not dialog:
@@ -286,7 +296,10 @@ class SipEndpoint(object):
             # self.parameters.pop("userB", None)
             pass
 
-        m = buildMessage(message_string, self.parameters)
+        if isinstance(message_string, SipMessage):
+            m = message_string
+        else:
+            m = buildMessage(message_string, self.parameters)
         assert m.type == "Request", 'Tried to start a new dialog with a SIP Response'
 
         new_dialog = self.start_new_dialog()
@@ -329,7 +342,11 @@ class SipEndpoint(object):
         if "callId" not in self.parameters or not self.parameters['callId']:
             raise Exception("Cannot reply when we are not in a dialog")
 
-        m = buildMessage(message_string, self.parameters)
+        if isinstance(message_string, SipMessage):
+            # We can also get a SipEndpoint type as input but it will be sent as is
+            m = message_string
+        else:
+            m = buildMessage(message_string, self.parameters)
 
         if dialog:
             dialog = self.set_dialog(dialog)

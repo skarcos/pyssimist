@@ -94,6 +94,17 @@ class CstaApplication:
     def get_monitored_users(self):
         return list(user for user in self.users if self.get_user(user).parameters["monitorCrossRefID"] is not None)
 
+    def prepare_message(self, from_user, message):
+        """
+        Convert a SIP message string to SipMessage object
+
+        :param message: The message string
+        :param from_user: The originating CSTA subscriber object
+        :return: A CstaMessage object
+        """
+        user = self.users[from_user]
+        return buildMessage(message, user.parameters)
+
     def send(self, message, from_user=None, to_user=None):
         """ Send a CSTA message
 
