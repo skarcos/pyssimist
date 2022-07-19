@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='pyssimist',
-    version='0.1.2',
+    version='0.1.3',
     packages=['sip', 'csta', 'common', 'tshark_tools'],
     url='https://github.com/skarcos/pyssimist',
     package_data={"csta": ["CstaPool/*.xml"]},
