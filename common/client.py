@@ -5,14 +5,16 @@ Initial Version: Costas Skarakis 11/11/2018
 import selectors
 import socket
 import ssl
+import io
 from threading import Lock
 
 from common.tc_logging import debug
-from common.util import wait_for_sip_data
+from common.util import wait_for_sip_data, NoData
 
 
 class TCPClient(object):
     def __init__(self, ip, port):
+        self.sip_buffer = []
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
@@ -65,7 +67,7 @@ class TCPClient(object):
         if not self.sel.select(timeout):
             raise socket.timeout("Timeout waiting for data in " + self.ip + ":" + str(self.port))
 
-    def waitForSipData(self, timeout=None, client=None):
+    def waitForSipData(self, timeout=None, client=None, bufsize=4096):
         if not client:
             client = self
         with client.wait_lock:
@@ -73,8 +75,24 @@ class TCPClient(object):
             bkp = client.socket.gettimeout()
             data = b""
             try:
-                self.wait_select(timeout)
-                data = wait_for_sip_data(client.sockfile)
+                if client.sip_buffer:
+                    data = client.sip_buffer.pop(0)
+                else:
+                    client.wait_select(timeout)
+                    all_data = io.BytesIO(client.socket.recv(bufsize))
+                    while True:
+                        try:
+                            # There may be more than one sip messages in the socket
+                            # I think select will not trigger if we only read one of them
+                            # and then come back for the second one
+                            client.sip_buffer.append(wait_for_sip_data(all_data))
+                        except NoData:
+                            if client.sip_buffer:
+                                data = client.sip_buffer.pop(0)
+                            else:
+                                data = all_data.getvalue()
+                                raise ValueError
+                            break
             except ValueError:
                 debug('Value Error: '+data.decode())
                 # debug(line.decode())
