@@ -242,6 +242,10 @@ class CstaApplication:
                          inmessage["monitorCrossRefID"] and user_xrefid and
                          inmessage["monitorCrossRefID"] == user_xrefid) or
 
+                        (inmessage.is_event() and
+                         inmessage["monitorCrossRefID"] and
+                         user_xrefid is None) or
+
                         (this_user is not None and
                          inmessage.is_response() and
                          {inmessage.eventid: inmessage_type.replace("Response", "")} in other_users_transactions)
