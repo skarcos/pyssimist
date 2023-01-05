@@ -174,8 +174,6 @@ class CstaApplication:
                 # first get a message from the buffer
                 inmessage = self.get_buffered_message(user_xrefid)
 
-            sleep(0.1)
-
             if self.server:
                 continue
 
