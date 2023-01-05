@@ -55,6 +55,10 @@ class SipEndpointView(SipEndpoint):
         self.view.paint(self.number)
         super().connect(*args, **kwargs)
 
+    def use_link(self, *args, **kwargs):
+        self.view.paint(self.number)
+        super().use_link(*args, **kwargs)
+
     def send(self, *args, **kwargs):
         self.view.arrow(self.number, ">..")
         message = super().send(*args, **kwargs)
