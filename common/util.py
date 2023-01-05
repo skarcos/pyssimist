@@ -114,19 +114,36 @@ def wait_for_sip_data(sockfile):
         data += line
         if not line.strip():
             break
-        header, value = [x.strip() for x in line.split(b":", 1)]
+        try:
+            header, value = [x.strip() for x in line.split(b":", 1)]
+        except ValueError:
+            print("Incorrect header line:", repr(line))
+            print("Message up to that:", data)
+            continue
         if header == b"Content-Length" or header == b"content-length":
             content_length = int(value)
 
+    if not data.strip():
+        raise EOFError
+
+    body = ""
     if content_length > 0:
-        data += sockfile.read(content_length)
+        body = sockfile.read(content_length)
+        if len(body) < content_length:
+            raise IncompleteData
+        else:
+            data += body
 
     if content_length == -1:
-        raise NoData("No content length in message")
+        raise IncompleteData("No content length in message: " + repr(data))
     return data
 
 
 class NoData(Exception):
+    pass
+
+
+class IncompleteData(Exception):
     pass
 
 
@@ -400,6 +417,7 @@ class Load(object):
         self.loop.join()
 
     def statistics(self):
+        self.calls["Active"] = len(self.active)
         self.log.info("{}:{}".format(time(), self.calls))
         if not self.stopCondition and (self.duration < 0 or time() - self.startTime < self.duration) or self.active:
             Timer(1, self.statistics).start()
@@ -415,13 +433,12 @@ class LoadThread(Thread):
         try:
             super().run()
         except Exception as e:
-            logger.debug("Exception in Thread")
-            logger.debug(traceback.format_exc())
             self.exc = e
+            logger.debug("Exception in Thread: " + self.name)
+            logger.debug(traceback.format_exc())
             raise
 
     def join(self, timeout=None):
+        super().join(timeout)
         if self.exc:
             raise self.exc
-        else:
-            super().join(timeout)

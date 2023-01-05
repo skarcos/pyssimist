@@ -9,7 +9,7 @@ import io
 from threading import Lock
 
 from common.tc_logging import debug
-from common.util import wait_for_sip_data, NoData
+from common.util import wait_for_sip_data, NoData, IncompleteData
 
 
 class TCPClient(object):
@@ -25,6 +25,7 @@ class TCPClient(object):
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.send_lock = Lock()
         self.wait_lock = Lock()
+        self.csta_wait_lock = Lock()
         self.sel = selectors.DefaultSelector()
         self.sel.register(self.socket, selectors.EVENT_READ, data=None)
 
@@ -86,6 +87,18 @@ class TCPClient(object):
                             # I think select will not trigger if we only read one of them
                             # and then come back for the second one
                             client.sip_buffer.append(wait_for_sip_data(all_data))
+                        except EOFError:
+                            if client.sip_buffer:
+                                data = client.sip_buffer.pop(0)
+                                break
+                            else:
+                                client.wait_select(timeout)
+                                all_data = io.BytesIO(client.socket.recv(bufsize))
+                                continue
+                        except IncompleteData:
+                            client.wait_select(timeout)
+                            all_data = io.BytesIO(all_data.getvalue() + client.socket.recv(bufsize))
+                            continue
                         except NoData:
                             if client.sip_buffer:
                                 data = client.sip_buffer.pop(0)
@@ -106,7 +119,7 @@ class TCPClient(object):
             return data
 
     def waitForCstaData(self, timeout=None):
-        with self.wait_lock:
+        with self.csta_wait_lock:
             bkp = self.socket.gettimeout()
             if timeout: self.socket.settimeout(timeout)
             try:
@@ -144,6 +157,7 @@ class UDPClient(TCPClient):
         self.sockfile = self.socket.makefile(mode='rb')
         self.send_lock = Lock()
         self.wait_lock = Lock()
+        self.csta_wait_lock = Lock()
 
 
 class TLSClient(TCPClient):
@@ -154,6 +168,7 @@ class TLSClient(TCPClient):
         self.server_name = subject_name
         self.send_lock = Lock()
         self.wait_lock = Lock()
+        self.csta_wait_lock = Lock()
 
         # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
         if hasattr(ssl, "PROTOCOL_TLS_CLIENT"):
