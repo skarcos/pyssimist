@@ -169,122 +169,122 @@ class CstaApplication:
             user_xrefid = this_user.parameters.get("monitorCrossRefID", None)
 
         while not inmessage:
-            self.lock.acquire()
-            if self.message_buffer:
-                # first get a message from the buffer
-                inmessage = self.get_buffered_message(user_xrefid)
+            with self.lock:
+                if self.message_buffer:
+                    # first get a message from the buffer
+                    inmessage = self.get_buffered_message(user_xrefid)
 
-            if self.server:
-                continue
+                if self.server:
+                    continue
 
-            if not inmessage:
-                # no (more) buffered messages. try the network
-                try:
-                    # print("Waiting for", message)
-                    # inbytes = self.link.waitForCstaData(timeout=0.2)
-                    inbytes = self.link.waitForCstaData(timeout=timeout)
-                    inmessage = parseBytes(inbytes)
-                # except sock_timeout:
-                #     inmessage = None
-                #     timeout -= 0.2
-                #     if timeout <= 0:
-                #         raise
-                #     else:
-                #         continue
-                except UnicodeDecodeError:
-                    debug("Ignoring malformed data")
+                if not inmessage:
+                    # no (more) buffered messages. try the network
+                    try:
+                        # print("Waiting for", message)
+                        # inbytes = self.link.waitForCstaData(timeout=0.2)
+                        inbytes = self.link.waitForCstaData(timeout=timeout)
+                        inmessage = parseBytes(inbytes)
+                    # except sock_timeout:
+                    #     inmessage = None
+                    #     timeout -= 0.2
+                    #     if timeout <= 0:
+                    #         raise
+                    #     else:
+                    #         continue
+                    except UnicodeDecodeError:
+                        debug("Ignoring malformed data")
+                        inmessage = None
+                        continue
+                    except sock_timeout:
+                        exception(str(for_user) + " No " + str(message) + " " + str(self.message_buffer))
+                        raise
+
+                inmessage_type = inmessage.event
+                if inmessage_type in ignore_messages:
                     inmessage = None
                     continue
-                except sock_timeout:
-                    exception(str(for_user) + " No " + str(message) + " " + str(self.message_buffer))
-                    raise
 
-            inmessage_type = inmessage.event
-            if inmessage_type in ignore_messages:
-                inmessage = None
-                continue
+                if message and (
+                        # received message is not of expected type or
+                        (isinstance(message, str) and message != inmessage_type) or
 
-            if message and (
-                    # received message is not of expected type or
-                    (isinstance(message, str) and message != inmessage_type) or
+                        # received message type is not in list of expected types or
+                        (type(message) in (list, tuple) and not any([m == inmessage_type for m in message])) or
 
-                    # received message type is not in list of expected types or
-                    (type(message) in (list, tuple) and not any([m == inmessage_type for m in message])) or
-
-                    # received message is a csta response that has an unknown/incorrect invokeID (eventid)
-                    (this_user is not None and
-                     inmessage.is_response() and
-                     inmessage.eventid not in this_user.out_transactions) or
-
-                    # received message type is for another user (different xref_id and not MonitorStartResponse)
-                    # # ie we are expecting message for a specific user
-                    (this_user is not None and
-                     # # the message has a xrefid tag and our user has an xrefid parameter (although it may be empty)
-                     inmessage["monitorCrossRefID"] and user_xrefid is not None and
-                     # # the message xrefid is different than our user's xrefid
-                     inmessage["monitorCrossRefID"] != user_xrefid and
-                     # # the message is not a MonitorStartResponse. This is the normal case where we send MonitorStart
-                     # # at which time the user will not have xrefid assigned yet and we expect a response that we will
-                     # # use to assign xrefid to the user
-                     inmessage_type != "MonitorStartResponse")
-            ):
-
-                # buffer received message if it is intended for another user or if it is an event that came sooner
-                # than expected or if it is a response to a request from another user
-                if (
-                        (this_user is not None and
-                         inmessage["monitorCrossRefID"] and user_xrefid and
-                         inmessage["monitorCrossRefID"] in other_users_xrefid) or
-
-                        (inmessage.is_event() and
-                         inmessage["monitorCrossRefID"] and user_xrefid and
-                         inmessage["monitorCrossRefID"] == user_xrefid) or
-
-                        (inmessage.is_event() and
-                         inmessage["monitorCrossRefID"] and
-                         user_xrefid is None) or
-
+                        # received message is a csta response that has an unknown/incorrect invokeID (eventid)
                         (this_user is not None and
                          inmessage.is_response() and
-                         {inmessage.eventid: inmessage_type.replace("Response", "")} in other_users_transactions)
+                         inmessage.eventid not in this_user.out_transactions) or
+
+                        # received message type is for another user (different xref_id and not MonitorStartResponse)
+                        # # ie we are expecting message for a specific user
+                        (this_user is not None and
+                         # # the message has a xrefid tag and our user has an xrefid parameter (although it may be empty)
+                         inmessage["monitorCrossRefID"] and user_xrefid is not None and
+                         # # the message xrefid is different than our user's xrefid
+                         inmessage["monitorCrossRefID"] != user_xrefid and
+                         # # the message is not a MonitorStartResponse. This is the normal case where we send MonitorStart
+                         # # at which time the user will not have xrefid assigned yet and we expect a response that we will
+                         # # use to assign xrefid to the user
+                         inmessage_type != "MonitorStartResponse")
                 ):
 
-                    self.message_buffer.append(inmessage)
-                    # debug(
-                    #     "BUFFERED MESSAGE '{}' with xrefid '{}' for '{}' because I am '{}' waiting for '{}' in '{}'".format(
-                    #         inmessage_type,
-                    #         inmessage["monitorCrossRefID"],
-                    #         inmessage["deviceID"], for_user, message,
-                    #         this_user.parameters["monitorCrossRefID"]))
-                    inmessage = None
-                else:
-                    if this_user is None:
-                        raise AssertionError('Got "{}" with callID {} and xrefid {} '
-                                             'while expecting "{}"'.format(inmessage_type,
-                                                                           inmessage["callID"],
-                                                                           inmessage["monitorCrossRefID"],
-                                                                           message))
-                    else:
-                        raise AssertionError('Got "{}" with callID {} and xrefid {} while expecting "{}" with '
-                                             'callID {} and xrefid {}. '
-                                             'Known transactions are:\n"{}"\n{} '.format(inmessage_type,
-                                                                                         inmessage["callID"],
-                                                                                         inmessage["monitorCrossRefID"],
-                                                                                         message,
-                                                                                         this_user.parameters.get(
-                                                                                             "callID",
-                                                                                             None),
-                                                                                         this_user.parameters.get(
-                                                                                             "monitorCrossRefID",
-                                                                                             None),
-                                                                                         this_user.out_transactions,
-                                                                                         inmessage))
-            self.lock.release()
+                    # buffer received message if it is intended for another user or if it is an event that came sooner
+                    # than expected or if it is a response to a request from another user
+                    if (
+                            (this_user is not None and
+                             inmessage["monitorCrossRefID"] and user_xrefid and
+                             inmessage["monitorCrossRefID"] in other_users_xrefid) or
 
+                            (inmessage.is_event() and
+                             inmessage["monitorCrossRefID"] and user_xrefid and
+                             inmessage["monitorCrossRefID"] == user_xrefid) or
+
+                            (inmessage.is_event() and
+                             inmessage["monitorCrossRefID"] and
+                             user_xrefid is None) or
+
+                            (this_user is not None and
+                             inmessage.is_response() and
+                             {inmessage.eventid: inmessage_type.replace("Response", "")} in other_users_transactions)
+                    ):
+
+                        self.message_buffer.append(inmessage)
+                        # debug(
+                        #     "BUFFERED MESSAGE '{}' with xrefid '{}' for '{}' because I am '{}' waiting for '{}' in '{}'".format(
+                        #         inmessage_type,
+                        #         inmessage["monitorCrossRefID"],
+                        #         inmessage["deviceID"], for_user, message,
+                        #         this_user.parameters["monitorCrossRefID"]))
+                        inmessage = None
+                    else:
+                        if this_user is None:
+                            raise AssertionError('Got "{}" with callID {} and xrefid {} '
+                                                 'while expecting "{}"'.format(inmessage_type,
+                                                                               inmessage["callID"],
+                                                                               inmessage["monitorCrossRefID"],
+                                                                               message))
+                        else:
+                            raise AssertionError('Got "{}" with callID {}, eventid {} and xrefid {} while expecting "{}" with '
+                                                 'callID {} and xrefid {}. '
+                                                 'Known transactions are:\n"{}"\n{} '.format(inmessage_type,
+                                                                                             inmessage["callID"],
+                                                                                             inmessage.eventid,
+                                                                                             inmessage["monitorCrossRefID"],
+                                                                                             message,
+                                                                                             this_user.parameters.get(
+                                                                                                 "callID",
+                                                                                                 None),
+                                                                                             this_user.parameters.get(
+                                                                                                 "monitorCrossRefID",
+                                                                                                 None),
+                                                                                             this_user.out_transactions,
+                                                                                             inmessage))
         if this_user is not None:
             # Evaluate the invoke id
             this_user.update_incoming_transactions(inmessage)
             this_user.update_connection_id(inmessage)
+
         return inmessage
 
     def get_buffered_message(self, xref_id):
