@@ -168,11 +168,15 @@ class CstaApplication:
             this_user = self.users[for_user]
             user_xrefid = this_user.parameters.get("monitorCrossRefID", None)
 
+        len_buffer = len(self.message_buffer)
+        count = 0
+
         while not inmessage:
             with self.lock:
-                if self.message_buffer:
+                if count < len_buffer:
                     # first get a message from the buffer
                     inmessage = self.get_buffered_message(user_xrefid)
+                    count += 1
 
                 if self.server:
                     continue
