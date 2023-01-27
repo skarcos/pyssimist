@@ -362,7 +362,7 @@ class Load(object):
         handler = logging.handlers.RotatingFileHandler("Statistics.txt", mode="w", maxBytes=20000000, backupCount=5)
         st_logger.addHandler(handler)
         self.log = st_logger
-        self.calls = {"Started": 0, "Finished": 0, "Passed": 0}
+        self.calls = {"Started": 0, "Finished": 0, "Passed": 0, "Failed": 0}
         self.loop = LoadThread(target=self._start)
         self.statistics()
 
@@ -373,6 +373,7 @@ class Load(object):
         """
         Every :interval seconds, start :quantity flows
         """
+        self.startTime = time()
         while not (self.stopCondition or not (self.duration < 0 or time() - self.startTime < self.duration)):
             t = time()
             for i in range(self.quantity):
@@ -394,21 +395,27 @@ class Load(object):
         self.active.append(c)
         self.calls["Started"] += 1
 
-    def monitor(self, max_tracked_errors=30):
+    def monitor(self):
+        t_prev = time()
+        calls_prev = self.calls["Started"]
         while self.active or not self.stopCondition:
             sleep(0.1)
+            t_now = time()
+            t = t_now - t_prev
+            if t > self.interval:
+                calls_now = self.calls["Started"]
+                calls_since = calls_now - calls_prev
+                cps = calls_since / t
+                self.calls["Instant Calls Per second"] = cps
+                self.calls["Total Average Calls Per second"] = calls_now / (t_now - self.startTime)
+                calls_prev = calls_now
+                t_prev = t_now
             for inst in (ins for ins in self.active if not ins.is_alive()):
                 try:
                     inst.join()
                 except Exception as e:
-                    key = str(e)
-                    if ": Got" in key:
-                        key = key.split('"')[1]
-                    key = "Failed: " + key
-                    if key in self.calls:
-                        self.calls[key] += 1
-                    elif len(self.calls) < max_tracked_errors:
-                        self.calls[key] = 1
+                    self.calls["Failed"] += 1
+                    reason = str(e)  # TODO: for usage in the future
                 else:
                     self.calls["Passed"] += 1
                 finally:
