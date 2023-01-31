@@ -72,14 +72,25 @@ class CstaApplication:
     def get_user(self, directory_number):
         return self.users[str(directory_number)]
 
-    def monitor_start(self, directory_number):
-        """ Send MonitorStart and add directory number to monitored users"""
+    def monitor_start(self, directory_number, force=False):
+        """
+        Send MonitorStart and add directory number to monitored users
+
+
+        :param directory_number: The DN of the device to monitor
+        :param force: Force sending another monitor request and create another Monitor Record for the same device
+        :return: None
+        """
+
         directory_number = str(directory_number)
         user = self.get_user(directory_number)
-        user.parameters["user"] = directory_number
-        user.send("MonitorStart")
-        inmessage = user.wait_for_message("MonitorStartResponse")
-        user.parameters["monitorCrossRefID"] = inmessage["monitorCrossRefID"]
+        if force or directory_number not in self.get_monitored_users():
+            user.parameters["user"] = directory_number
+            user.send("MonitorStart")
+            inmessage = user.wait_for_message("MonitorStartResponse")
+            user.parameters["monitorCrossRefID"] = inmessage["monitorCrossRefID"]
+        else:
+            debug("Skip MonitorStart for already Monitored user: " + directory_number + ". Use force=True to override.")
 
     # def monitor_stop(self, directory_number):
     #     """ Send MonitorStop and delete directory number from monitored users"""
