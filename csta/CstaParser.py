@@ -112,7 +112,10 @@ if __name__ == "__main__":
     b.append('''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns3:MonitorStart xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><ns3:monitorObject><ns3:deviceObject typeOfNumber="dialingNumber">3021033</ns3:deviceObject></ns3:monitorObject></ns3:MonitorStart>''')
     b.append('<?xml version="1.0" encoding="utf-8"?><DeflectCall><callToBeDiverted><deviceID>SUB_C</deviceID><callID>FF000100000000006BB1234C31000000</callID></callToBeDiverted><newDestination>SUB_D</newDestination></DeflectCall>')
     for i in a:
-        print(parseBytes(i))
+        m = parseBytes(i)
+        print(m["monitorCrossRefID"])
+        if m["monitorCrossRefID"] is None:
+            print(m)
     for j in b:
         m = buildMessage(j, {"user": "12313213"}, eventid=2222)
         if m["deviceID"] and m["callID"]:
@@ -122,5 +125,6 @@ if __name__ == "__main__":
             print(m["deviceID"], m["callID"])
         print(m)
     last = buildMessage(j, {"user": "12313213"}, eventid=2222)["deviceObject"]
+
 
 

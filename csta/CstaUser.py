@@ -4,6 +4,7 @@ Initial Version: Costas Skarakis 8/7/2020 (Aug 7)
 """
 from common.tc_logging import warning, exception
 from csta.CstaMessage import is_response, is_event, is_request
+from threading import Lock
 
 
 class CstaUser:
@@ -17,6 +18,9 @@ class CstaUser:
         self.inc_transactions = {}
         self.out_transactions = {}
         self.deviceID = number
+        self.message_buffer = []
+        self.buffer_mod_time = None
+        self.lock = Lock()
         self.parameters = {"monitorCrossRefID": self.monitorCrossRefID,
                            "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
                            "CSTA_USE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
@@ -118,3 +122,18 @@ class CstaUser:
                                                            message,
                                                            ignore_messages=ignore_messages,
                                                            timeout=timeout)
+
+    def reset(self):
+        with self.lock:
+            self.busy = False
+            self.monitorCrossRefID = None
+            self.callID = None
+            self.inc_transactions = {}
+            self.out_transactions = {}
+            self.message_buffer = []
+            self.buffer_mod_time = None
+            self.parameters = {"monitorCrossRefID": self.monitorCrossRefID,
+                               "CSTA_CREATE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
+                               "CSTA_USE_MONITOR_CROSS_REF_ID": self.monitorCrossRefID,
+                               "callID": self.callID,
+                               "deviceID": self.deviceID}
