@@ -72,6 +72,8 @@ def pool(sequence, condition=bool):
         if condition(c):
             yield c
         else:
+            # If all are busy it may get intense...
+            sleep(0.1)
             continue
 
 
@@ -414,10 +416,13 @@ class Load(object):
                 try:
                     inst.join()
                 except Exception as e:
-                    self.calls["Failed"] += 1
-                    reason = str(e)  # TODO: for usage in the future
+                    self.calls["Failed"] += 1  # could I stop all threads in this scenario?
                 else:
-                    self.calls["Passed"] += 1
+                    if inst.exc:
+                        # Test results implied that if the exception was caught the test was counted as passed
+                        self.calls["Failed"] += 1
+                    else:
+                        self.calls["Passed"] += 1
                 finally:
                     self.active.remove(inst)
                     self.calls["Finished"] += 1
