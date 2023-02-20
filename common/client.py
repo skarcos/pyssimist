@@ -121,7 +121,10 @@ class TCPClient(object):
     def waitForCstaData(self, timeout=None):
         with self.csta_wait_lock:
             bkp = self.socket.gettimeout()
-            if timeout: self.socket.settimeout(timeout)
+            if timeout:
+                self.socket.settimeout(timeout)
+            elif timeout is None:
+                self.socket.setblocking(True)
             try:
                 # header = ""
                 # while not header:
@@ -140,6 +143,9 @@ class TCPClient(object):
             finally:
                 self.socket.settimeout(bkp)
             return header + data
+
+    def shutdown(self):
+        self.socket.shutdown(socket.SHUT_RDWR)
 
 
 class UDPClient(TCPClient):
