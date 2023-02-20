@@ -60,31 +60,31 @@ class SipEndpointView(SipEndpoint):
         super().use_link(*args, **kwargs)
 
     def send(self, *args, **kwargs):
-        self.view.arrow(self.number, ">..")
+        self.view.arrow(self.number, "Sndg")
         message = super().send(*args, **kwargs)
-        self.view.arrow(self.number, "-->")
+        self.view.arrow(self.number, "Sent")
         self.view.message(self.number, message.get_status_or_method())
         return message
 
     def reply(self, *args, **kwargs):
-        self.view.arrow(self.number, ">..")
+        self.view.arrow(self.number, "Sndg")
         message = super().reply(*args, **kwargs)
-        self.view.arrow(self.number, "-->")
+        self.view.arrow(self.number, "Sent")
         self.view.message(self.number, message.get_status_or_method())
         return message
 
     def send_new(self, *args, **kwargs):
-        self.view.arrow(self.number, ">..")
+        self.view.arrow(self.number, "Sndg")
         message = super().send_new(*args, **kwargs)
-        self.view.arrow(self.number, "-->")
+        self.view.arrow(self.number, "Sent")
         self.view.message(self.number, message.get_status_or_method())
         return message
 
     def wait_for_message(self, message_type, **kwargs):
-        self.view.arrow(self.number, "..<")
+        self.view.arrow(self.number, "Wng")
         self.view.message(self.number, message_type)
         message = super().wait_for_message(message_type, **kwargs)
-        self.view.arrow(self.number, "<--")
+        self.view.arrow(self.number, "Rcvd")
         self.view.message(self.number, message.get_status_or_method())
         return message
 
@@ -96,3 +96,7 @@ class SipEndpointView(SipEndpoint):
 
     def update_arrow(self, arrow=""):
         self.view.arrow(self.number, arrow)
+
+    def make_busy(self, busy=True):
+        super().make_busy(busy)
+        self.colour(["yellow", "cyan"][busy])

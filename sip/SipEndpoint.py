@@ -62,6 +62,9 @@ class SipEndpoint(object):
         self.busy = False
         self.lock = Lock()
 
+    def make_busy(self, busy=True):
+        self.busy = busy
+
     def update_parameters(self, params, force=False):
         """
         Update endpoint parameters. This is useful for adding more flexibility in the creation of SIP messages
