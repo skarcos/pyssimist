@@ -73,7 +73,7 @@ def pool(sequence, condition=bool):
             yield c
         else:
             # If all are busy it may get intense...
-            sleep(0.1)
+            sleep(0.01)
             continue
 
 
@@ -146,6 +146,10 @@ class NoData(Exception):
 
 
 class IncompleteData(Exception):
+    pass
+
+
+class NoMoreAvailableExecutors(Exception):
     pass
 
 
@@ -376,11 +380,16 @@ class Load(object):
         Every :interval seconds, start :quantity flows
         """
         self.startTime = time()
+        # target_cps = self.quantity / self.interval
+        # average_cps = target_cps
         while not (self.stopCondition or not (self.duration < 0 or time() - self.startTime < self.duration)):
             t = time()
+            # cps_lag = (target_cps - average_cps)
+            # # new_interval = q * interval / (interval * lag + q )
+            # self.interval = max(0, self.quantity * self.interval / (self.interval * cps_lag + self.quantity))
             for i in range(self.quantity):
                 self.run_next_flow()
-                sleep(max((0, self.interval-time()+t)))
+            sleep(max((0, self.interval-time()+t)))
 
         self.stop()
 
@@ -408,24 +417,29 @@ class Load(object):
                 calls_now = self.calls["Started"]
                 calls_since = calls_now - calls_prev
                 cps = calls_since / t
+                average_cps = calls_now / (t_now - self.startTime)
                 self.calls["Instant Calls Per second"] = cps
-                self.calls["Total Average Calls Per second"] = calls_now / (t_now - self.startTime)
+                self.calls["Total Average Calls Per second"] = average_cps
                 calls_prev = calls_now
                 t_prev = t_now
             for inst in (ins for ins in self.active if not ins.is_alive()):
                 try:
                     inst.join()
-                except Exception as e:
-                    self.calls["Failed"] += 1  # could I stop all threads in this scenario?
-                else:
                     if inst.exc:
                         # Test results implied that if the exception was caught the test was counted as passed
-                        self.calls["Failed"] += 1
+                        self.calls["Failed"] += 1  # welp... this is not counted.
+                    elif inst.exc is None:
+                        self.calls["Started"] -= 1
+                        continue
                     else:
                         self.calls["Passed"] += 1
+                    self.calls["Finished"] += 1
+                # except NoMoreAvailableExecutors:
+                #     continue
+                # except Exception as e:
+                #     self.calls["Failed"] += 1  # could I stop all threads in this scenario?
                 finally:
                     self.active.remove(inst)
-                    self.calls["Finished"] += 1
         self.loop.join()
 
     def statistics(self):
@@ -444,10 +458,15 @@ class LoadThread(Thread):
         self.exc = False
         try:
             super().run()
+        except NoMoreAvailableExecutors:
+            # Execution skipped
+            # Maybe execution should be rescheduled?
+            self.exc = None
+            return
         except Exception as e:
             self.exc = e
-            logger.debug("Exception in Thread: " + self.name)
-            logger.debug(traceback.format_exc())
+            logger.exception("Exception in Thread: " + self.name)
+            logger.exception(traceback.format_exc())
             raise
 
     def join(self, timeout=None):
