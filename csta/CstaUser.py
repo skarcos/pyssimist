@@ -14,6 +14,7 @@ class CstaUser:
         self.csta_application = csta_application
         self.monitorCrossRefID = None
         self.callID = None
+        self.calls = []  # store multiple callIDs
         # Transactions are a dictionary of eventid to request eg {353: "MakeCall"}
         self.inc_transactions = {}
         self.out_transactions = {}
@@ -95,10 +96,13 @@ class CstaUser:
         else:
             assert message.is_event(), "Message {} is not a response, request or event".format(message.event)
 
-    def update_connection_id(self, message):
-        if message["deviceID"] and message["callID"]:
-            self.callID = message["callID"]
-            self.set_parameter("callID", self.callID)
+    def update_call_id(self, message):
+        callID = message["callID"]
+        if message["deviceID"] and callID:
+            self.callID = callID
+            if callID not in self.calls:
+                self.calls.append(callID)
+            self.set_parameter("callID", callID)
 
     def monitor_start(self):
         return self.csta_application.monitor_start(self.number)
@@ -115,8 +119,8 @@ class CstaUser:
         """
         return self.csta_application.prepare_message(self.number, message)
 
-    def send(self, message, to_user=None):
-        return self.csta_application.send(message, from_user=self.number, to_user=to_user)
+    def send(self, message, to_user=None, callID=None):
+        return self.csta_application.send(message, from_user=self.number, to_user=to_user, callID=callID)
 
     def wait_for_message(self, message, ignore_messages=(), timeout=5.0):
         return self.csta_application.wait_for_csta_message(self.number,
@@ -130,6 +134,7 @@ class CstaUser:
             self.message_buffer = []
             self.busy = False
             self.callID = None
+            self.calls = []
             self.inc_transactions = {}
             self.out_transactions = {}
             self.buffer_mod_time = None

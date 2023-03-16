@@ -111,6 +111,7 @@ if __name__ == "__main__":
     b.append('''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns3:SystemStatus xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4"/>''')
     b.append('''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns3:MonitorStart xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><ns3:monitorObject><ns3:deviceObject typeOfNumber="dialingNumber">3021033</ns3:deviceObject></ns3:monitorObject></ns3:MonitorStart>''')
     b.append('<?xml version="1.0" encoding="utf-8"?><DeflectCall><callToBeDiverted><deviceID>SUB_C</deviceID><callID>FF000100000000006BB1234C31000000</callID></callToBeDiverted><newDestination>SUB_D</newDestination></DeflectCall>')
+    b.append('''<?xml version='1.0' encoding='utf-8'?><CallInformationEvent xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4" xmlns:scx="http://www.siemens.com/schema/csta"><monitorCrossRefID>1166743342</monitorCrossRefID><connection><callID>FF00010000000000E2E00E6416060000</callID><deviceID>3021061290000</deviceID></connection><device><deviceIdentifier>N&lt;3021061290000&gt;;noa=nk</deviceIdentifier></device><correlatorData><string>75726E3A6E656E613A7569643A63616C6C69643A7535543341316E627635462E6F7376636932306E312E68386B2E7365633B75726E3A6E656E613A7569643A696E636964656E7469643A527A6E447039543643756E2E6F7376636932306E312E68386B2E736563</string></correlatorData><connectionInfo><mediaSessionInfo>voice</mediaSessionInfo></connectionInfo><callCharacteristics><acdCall>true</acdCall><priorityCall>true</priorityCall><highPriorityCall>true</highPriorityCall><sensitiveCall>true</sensitiveCall></callCharacteristics><extensions><privateData><private><scx:aliQueryTimeout><scx:aliDBInfo>10.2.31.5:9991</scx:aliDBInfo><scx:aliConfiguredTimeout>200</scx:aliConfiguredTimeout></scx:aliQueryTimeout></private></privateData></extensions></CallInformationEvent>''')
     for i in a:
         m = parseBytes(i)
         print(m["monitorCrossRefID"])
@@ -120,10 +121,12 @@ if __name__ == "__main__":
         m = buildMessage(j, {"user": "12313213"}, eventid=2222)
         if m["deviceID"] and m["callID"]:
             print(m["deviceID"], m["callID"])
-            m["deviceID"] = "user.deviceID"
-            m["callID"] = "user.callID"
+            # m["deviceID"] = "user.deviceID"
+            # m["callID"] = "user.callID"
             print(m["deviceID"], m["callID"])
         print(m)
+        print("`````", m["callID"])
+        print("=====", m["monitorCrossRefID"])
     last = buildMessage(j, {"user": "12313213"}, eventid=2222)["deviceObject"]
 
 
