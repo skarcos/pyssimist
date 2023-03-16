@@ -36,7 +36,8 @@ class SipEndpoint(object):
                            "viaBranch": None,
                            "epid": None,
                            "expires": 360,
-                           "cseq": None
+                           "cseq": "0",
+                           "method": None
                            }
         self.last_messages_per_dialog = []
         self.dialogs = []
@@ -57,6 +58,7 @@ class SipEndpoint(object):
         self.reply_to = self.send_in_ctx_of  # method alias
         self.secondary_lines = []
         self.message_buffer = []
+        self.buffer_mod_count = [0]  # using a int in a list to be able to share and muate between objects in use_link()
         self.registered = False
         self.re_register_timer = None
         self.busy = False
@@ -144,8 +146,19 @@ class SipEndpoint(object):
         self.parameters["source_ip"] = local_ip
         self.parameters["source_port"] = local_port
 
-    def use_link(self, link):
-        """ Convenience function to use an existing network connection"""
+    def use_link(self, other):
+        """ Convenience function to use an existing network connection
+        If parameter is SipEndpoint, we will use also share a common message buffer and dialog tracking
+        """
+        if isinstance(other, SipEndpoint):
+            link = other.link
+            self.message_buffer = other.message_buffer
+            self.dialogs = other.dialogs
+            self.requests = other.requests
+            self.last_messages_per_dialog = other.last_messages_per_dialog
+            self.buffer_mod_count = other.buffer_mod_count
+        else:
+            link = other
         protocol = ["TCP", "UDP"][link.socket.proto]
         local_ip = link.ip
         local_port = link.port
@@ -161,11 +174,23 @@ class SipEndpoint(object):
         self.parameters["transport"] = protocol
         # self.link.endpoints_connected += 1
 
+    def get_dialog(self):
+        """ Will use this method to get thread-local dialogs """
+        return {"Call-ID": self.parameters["callId"],
+                "from_tag": self.parameters["fromTag"],
+                "to_tag": self.parameters["toTag"]}
+
+    def get_transaction(self):
+        """ Will use this method to get thread-local transactions """
+        return {"via_branch": self.parameters["viaBranch"],
+                "cseq": self.parameters["cseq"],
+                "method": self.parameters["method"]}
+
     def set_dialog(self, dialog):
         """ Change current dialog to the one provided """
         if not isinstance(dialog, dict):
             exception("Must provide a dialog in the form of Python dictionary")
-        for key in self.current_dialog:
+        for key in self.get_dialog():
             if key not in dialog:
                 exception("Not a valid dialog. Missing key: " + key)
         dialog = self.get_complete_dialog(dialog)
@@ -173,34 +198,41 @@ class SipEndpoint(object):
             self.dialogs.append(dialog)
             self.requests.append([])
             # If we don't know this dialog it means we didn't started so it must be an incoming Request
-            self.tags[dialog_hash(dialog)] = "to_tag"
+            with self.lock:
+                self.tags[dialog_hash(dialog)] = "to_tag"
         self.current_dialog = dialog
-        self.parameters["callId"] = self.current_dialog["Call-ID"]
-        self.parameters["fromTag"] = self.current_dialog["from_tag"]
-        self.parameters["toTag"] = self.current_dialog["to_tag"]
+        self.parameters["callId"] = dialog["Call-ID"]
+        self.parameters["fromTag"] = dialog["from_tag"]
+        self.parameters["toTag"] = dialog["to_tag"]
         return dialog
 
     def switch_tags(self, dialog=None):
         if not dialog:
-            dialog = self.current_dialog
+            dialog = self.get_dialog()
         dhash = dialog_hash(dialog)
         dialog["from_tag"], dialog["to_tag"] = dialog["to_tag"], dialog["from_tag"]
         dhash_switched = dialog_hash(dialog)
         self.set_dialog(dialog)
-        if self.tags[dhash] == "to_tag":
-            self.tags[dhash_switched] = "from_tag"
-        else:
-            self.tags[dhash_switched] = "to_tag"
+        with self.lock:
+            if self.tags[dhash] == "to_tag":
+                self.tags[dhash_switched] = "from_tag"
+            else:
+                self.tags[dhash_switched] = "to_tag"
 
     def set_transaction(self, transaction):
         """ Change current transaction to the one provided """
         if not isinstance(transaction, dict):
             exception("Must provide a transaction in the form of Python dictionary")
+            return
         for key in self.current_transaction:
             if key not in transaction:
                 exception("Not a valid transaction. Missing key: " + key)
+                return
         for key in self.current_transaction:
             self.current_transaction[key] = transaction[key]
+        self.parameters["viaBranch"] = transaction["via_branch"]
+        self.parameters["cseq"] = transaction["cseq"]
+        self.parameters["method"] = transaction["method"]
 
     def start_new_dialog(self):
         """ Refresh the SIP dialog specific parameters """
@@ -211,7 +243,11 @@ class SipEndpoint(object):
             # "epid": lambda x=6: "SC" + util.randStr(x),
         }
         self.current_dialog = dialog
-        self.tags[dialog_hash(dialog)] = "from_tag"
+        self.parameters["callId"] = dialog["Call-ID"]
+        self.parameters["fromTag"] = dialog["from_tag"]
+        self.parameters["toTag"] = dialog["to_tag"]
+        with self.lock:
+            self.tags[dialog_hash(dialog)] = "from_tag"
         self.dialogs.append(dialog)
         self.requests.append([])
         return dialog
@@ -255,7 +291,7 @@ class SipEndpoint(object):
     def start_new_transaction(self, method, dialog=None):
         """ Refresh the via branch and CSeq header """
         if not dialog:
-            dialog = self.current_dialog
+            dialog = self.get_dialog()
         try:
             last_message_in_dialog = self.get_last_message_in(dialog)
         except:
@@ -354,7 +390,7 @@ class SipEndpoint(object):
         if dialog:
             dialog = self.set_dialog(dialog)
         else:
-            dialog = self.current_dialog
+            dialog = self.get_dialog()
 
         try:
             previous_message = self.get_last_message_in(dialog)
@@ -381,28 +417,35 @@ class SipEndpoint(object):
             self.free_resources(m)
         self.save_message(m)
 
-        m.set_transaction_from(self.current_transaction)
+        m.set_transaction_from(self.get_transaction())
         self.link.send(m.contents())
         return m
 
-    def get_buffered_message(self, dialog):
+    def get_buffered_message(self, message_type, dialog):
         """
         Return the first buffered message found in the given dialog
 
+        :param message_type: the requested message type
         :param dialog: The dialog in question
         :return: the buffered SipMessage
         """
         msg = None
         # for message in self.message_buffer:
         for i in range(len(self.message_buffer)):
-            message = self.message_buffer[i]
-            d = message.get_dialog()
+            message = self.message_buffer.pop(0)
+            m_dialog = message.get_dialog()
+            m_type = message.get_status_or_method()
             # If we have received no messages yet return the first message in the buffer
             if self.current_dialog == {"Call-ID": None, "from_tag": None, "to_tag": None} or \
-                    (d["Call-ID"] == dialog["Call-ID"] and d["from_tag"] == dialog["from_tag"]):
+                    (m_dialog["Call-ID"] == dialog["Call-ID"] and
+                     # m_dialog["from_tag"] == dialog["from_tag"] and
+                     m_type == message_type):
                 msg = message
-                self.message_buffer.pop(i)
                 break
+            else:
+                self.message_buffer.append(message)
+        # if msg is None:
+        #     print(self.number, "Buffer returned None for", message_type, "in callid and from_tag", dialog["Call-ID"], dialog["from_tag"], "although it has", self.message_buffer)
         return msg
 
     def wait_for_message(self, message_type, dialog=None, ignore_messages=(), link=None, timeout=5.0):
@@ -424,7 +467,11 @@ class SipEndpoint(object):
         if not link:
             link = self.link
         if not dialog:
-            dialog = self.current_dialog
+            dialog = {"Call-ID": self.parameters["callId"],
+                      "from_tag": self.parameters["fromTag"]}
+            if "toTag" in self.parameters:
+                dialog["to_tag"] = self.parameters["toTag"]
+
         else:
             dialog = self.get_complete_dialog(dialog)
 
@@ -432,15 +479,16 @@ class SipEndpoint(object):
         last_sent_message = self.get_last_message_in(dialog)
         if last_sent_message:
             transaction = last_sent_message.get_transaction()
-        len_buffer = len(self.message_buffer)
-        count = 0
+        # len_buffer = len(self.message_buffer)
 
+        local_mod_count = 0
         while not inmessage:
 
-            if count < len_buffer:
+            if local_mod_count < self.buffer_mod_count[0]:
+                # print(self.number, "Checking buffer for", message_type, "with callid", dialog["Call-ID"])
+                local_mod_count = self.buffer_mod_count[0]
                 # first get a message from the buffer
-                inmessage = self.get_buffered_message(dialog)
-                count += 1
+                inmessage = self.get_buffered_message(message_type, dialog)
 
             if not inmessage:
                 # no (more) buffered messages. try the network
@@ -451,6 +499,20 @@ class SipEndpoint(object):
             inmessage_dialog = inmessage.get_dialog()
             inmessage.cseq_method = inmessage.get_transaction()["method"]
 
+            # when sharing buffers we can get a message of other endpoints
+            # buffer message of correct type but incorrect callid
+            # keep it if we are mentioned in the "To" header
+            if inmessage_type == message_type and \
+                    inmessage_dialog["Call-ID"] != dialog["Call-ID"] and \
+                    "sip:{}@{}".format(self.number, self.ip) not in inmessage["To"]:
+                # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
+                # print(self.number, "My callid is", dialog["Call-ID"])
+
+                self.message_buffer.append(inmessage)
+                self.buffer_mod_count[0] += 1
+                inmessage = None
+                continue
+
             if inmessage_type in ignore_messages:
                 inmessage = None
                 continue
@@ -460,9 +522,11 @@ class SipEndpoint(object):
                      (type(message_type) in (list, tuple) and not any([m in inmessage_type for m in message_type])) or
                      (inmessage.type == "Response" and inmessage.cseq_method != transaction["method"])):
                 # we have received an unexpected message. buffer it if there is an active dialog for it
-                if inmessage_dialog in self.dialogs or inmessage_type == "INVITE":
+                if self.get_complete_dialog(inmessage_dialog) or inmessage_type == "INVITE":
                     # message is part of another active dialog or a new call, so buffer it
+                    # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
                     self.message_buffer.append(inmessage)
+                    self.buffer_mod_count[0] += 1
                     # print("Appended {} with {} to buffer. Will keep waiting for {} in {} ".format(inmessage_type,
                     #                                                                        inmessage_dialog,
                     #                                                                        message_type,
@@ -485,7 +549,8 @@ class SipEndpoint(object):
 
         self.save_message(inmessage)
         if inmessage.type == "Request":
-            self.set_transaction(inmessage.get_transaction())
+            inmessage_transaction = inmessage.get_transaction()
+            self.set_transaction(inmessage_transaction)
         else:
             assert inmessage.cseq_method == transaction["method"], \
                 "Got {} to {} instead of {} to {}".format(inmessage.get_status_or_method(),
