@@ -87,6 +87,13 @@ class TCPClient(object):
                             # I think select will not trigger if we only read one of them
                             # and then come back for the second one
                             client.sip_buffer.append(wait_for_sip_data(all_data))
+                            # We will replace all_data with everything following the current
+                            # read location to discard the message that was already added to the
+                            # buffer.
+                            # In case all_data contained more than one message and the second one
+                            # was incomplete, we have to reread only the second message
+                            # not the first one again which is already in the sip_buffer
+                            all_data = io.BytesIO(all_data.read())
                         except EOFError:
                             if client.sip_buffer:
                                 data = client.sip_buffer.pop(0)
@@ -104,12 +111,15 @@ class TCPClient(object):
                                 data = client.sip_buffer.pop(0)
                             else:
                                 data = all_data.getvalue()
-                                raise ValueError
+                                debug('Invalid SIP Data in socket: ' + data.decode())
+                                all_data = io.BytesIO(all_data.read())
+                                continue
+                                # raise ValueError
                             break
             except ValueError:
                 debug('Value Error: '+data.decode())
                 # debug(line.decode())
-                raise
+                # raise
             except socket.timeout:
                 debug('Data received before timeout: "{}"'.format(data.decode()))
                 raise
@@ -130,7 +140,7 @@ class TCPClient(object):
                 # while not header:
                 header = self.socket.recv(4)
                 if not header:
-                    # disconnected socket
+                    debug("Csta socket was probably disconnected from the other side")
                     return None
                 datalength = int(''.join(["%02X" % x for x in header]), base=16) - 4
                 data = b''
@@ -140,6 +150,9 @@ class TCPClient(object):
                     "Received on port {} message of length {}:\n\n".format(self.port, datalength) + (header + data).decode(
                         "utf8",
                         "backslashreplace").replace("\r\n", "\n"))
+            except socket.timeout:
+                debug('Data received before timeout: "{}"'.format(data.decode()))
+                raise
             finally:
                 self.socket.settimeout(bkp)
             return header + data

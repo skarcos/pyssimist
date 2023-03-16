@@ -66,6 +66,7 @@ def pool(sequence, condition=bool):
             lambda x: x.registered
     :return: yields the next eligible member
     """
+    assert sequence, "Refused to make empty pool"
     p = cycle(sequence)
     while True:
         c = next(p)
@@ -116,11 +117,14 @@ def wait_for_sip_data(sockfile):
         data += line
         if not line.strip():
             break
+        if not line.endswith(b"\r\n"):
+            raise IncompleteData
         try:
             header, value = [x.strip() for x in line.split(b":", 1)]
         except ValueError:
-            print("Incorrect header line:", repr(line))
-            print("Message up to that:", data)
+            logger.warning("Incorrect header line (no ':') in SIP message: " + repr(line) +
+                           "\n" + "Data received up to that:" + repr(data) +
+                           "\n" + "Will attempt to get the rest of the message from the network")
             continue
         if header == b"Content-Length" or header == b"content-length":
             content_length = int(value)
@@ -132,12 +136,17 @@ def wait_for_sip_data(sockfile):
     if content_length > 0:
         body = sockfile.read(content_length)
         if len(body) < content_length:
-            raise IncompleteData
+            raise IncompleteData("Message body not yet complete: " + repr(data))
         else:
             data += body
 
     if content_length == -1:
-        raise IncompleteData("No content length in message: " + repr(data))
+        if line == b"\r\n":
+            # This is the case were the message ended with no Content length.
+            # This is probably an invalid message/data
+            raise NoData
+        else:
+            raise IncompleteData("No content length in message yet: " + repr(data))
     return data
 
 
@@ -413,7 +422,7 @@ class Load(object):
             sleep(0.1)
             t_now = time()
             t = t_now - t_prev
-            if t > self.interval:
+            if t > self.interval and not self.stopCondition:
                 calls_now = self.calls["Started"]
                 calls_since = calls_now - calls_prev
                 cps = calls_since / t
