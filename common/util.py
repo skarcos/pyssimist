@@ -442,12 +442,12 @@ class Load(object):
                         continue
                     else:
                         self.calls["Passed"] += 1
-                    self.calls["Finished"] += 1
                 # except NoMoreAvailableExecutors:
                 #     continue
-                # except Exception as e:
-                #     self.calls["Failed"] += 1  # could I stop all threads in this scenario?
+                except:
+                    self.calls["Failed"] += 1  # could I stop all threads in this scenario?
                 finally:
+                    self.calls["Finished"] += 1
                     self.active.remove(inst)
         self.loop.join()
 
@@ -476,7 +476,7 @@ class LoadThread(Thread):
             self.exc = e
             logger.exception("Exception in Thread: " + self.name)
             logger.exception(traceback.format_exc())
-            raise
+            # raise
 
     def join(self, timeout=None):
         super().join(timeout)
