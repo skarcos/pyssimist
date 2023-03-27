@@ -19,7 +19,7 @@ class CstaUser:
         self.inc_transactions = {}
         self.out_transactions = {}
         self.deviceID = number
-        self.message_buffer = []
+        self.message_buffer = {}
         self.buffer_event = Event()
         self.buffer_mod_time = None
         self.lock = Lock()
@@ -122,16 +122,17 @@ class CstaUser:
     def send(self, message, to_user=None, callID=None):
         return self.csta_application.send(message, from_user=self.number, to_user=to_user, callID=callID)
 
-    def wait_for_message(self, message, ignore_messages=(), timeout=5.0):
+    def wait_for_message(self, message, calling_device=None, ignore_messages=(), timeout=5.0):
         return self.csta_application.wait_for_csta_message(self.number,
                                                            message,
+                                                           calling_device=calling_device,
                                                            ignore_messages=ignore_messages,
                                                            timeout=timeout)
 
     def reset(self):
         with self.lock:
             buffer = self.message_buffer
-            self.message_buffer = []
+            self.message_buffer = {}
             self.busy = False
             self.callID = None
             self.calls = []

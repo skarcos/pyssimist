@@ -112,21 +112,93 @@ if __name__ == "__main__":
     b.append('''<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ns3:MonitorStart xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns3="http://www.ecma-international.org/standards/ecma-323/csta/ed4"><ns3:monitorObject><ns3:deviceObject typeOfNumber="dialingNumber">3021033</ns3:deviceObject></ns3:monitorObject></ns3:MonitorStart>''')
     b.append('<?xml version="1.0" encoding="utf-8"?><DeflectCall><callToBeDiverted><deviceID>SUB_C</deviceID><callID>FF000100000000006BB1234C31000000</callID></callToBeDiverted><newDestination>SUB_D</newDestination></DeflectCall>')
     b.append('''<?xml version='1.0' encoding='utf-8'?><CallInformationEvent xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4" xmlns:scx="http://www.siemens.com/schema/csta"><monitorCrossRefID>1166743342</monitorCrossRefID><connection><callID>FF00010000000000E2E00E6416060000</callID><deviceID>3021061290000</deviceID></connection><device><deviceIdentifier>N&lt;3021061290000&gt;;noa=nk</deviceIdentifier></device><correlatorData><string>75726E3A6E656E613A7569643A63616C6C69643A7535543341316E627635462E6F7376636932306E312E68386B2E7365633B75726E3A6E656E613A7569643A696E636964656E7469643A527A6E447039543643756E2E6F7376636932306E312E68386B2E736563</string></correlatorData><connectionInfo><mediaSessionInfo>voice</mediaSessionInfo></connectionInfo><callCharacteristics><acdCall>true</acdCall><priorityCall>true</priorityCall><highPriorityCall>true</highPriorityCall><sensitiveCall>true</sensitiveCall></callCharacteristics><extensions><privateData><private><scx:aliQueryTimeout><scx:aliDBInfo>10.2.31.5:9991</scx:aliDBInfo><scx:aliConfiguredTimeout>200</scx:aliConfiguredTimeout></scx:aliQueryTimeout></private></privateData></extensions></CallInformationEvent>''')
-    for i in a:
-        m = parseBytes(i)
-        print(m["monitorCrossRefID"])
-        if m["monitorCrossRefID"] is None:
-            print(m)
+    b.append('''<?xml version="1.0" encoding="UTF-8"?>
+<DeliveredEvent xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4">
+   <monitorCrossRefID>1173673890</monitorCrossRefID>
+   <connection>
+      <callID>FF00010000000000EC6114647E570000</callID>
+      <deviceID>3021061290002</deviceID>
+   </connection>
+   <alertingDevice>
+      <deviceIdentifier>N&lt;3021061290002&gt;;noa=nk</deviceIdentifier>
+   </alertingDevice>
+   <callingDevice>
+      <deviceIdentifier>N&lt;7868772298&gt;Line71001;displayNumber=7868772298;uid=FF00010000000000EC6114647E570000</deviceIdentifier>
+   </callingDevice>
+   <calledDevice>
+      <deviceIdentifier>N&lt;3021061290002&gt;;noa=nk</deviceIdentifier>
+   </calledDevice>
+   <lastRedirectionDevice>
+      <notRequired/>
+   </lastRedirectionDevice>
+   <localConnectionInfo>alerting</localConnectionInfo>
+   <correlatorData>
+      <string>
+         7
+         5
+         7
+         2
+         6
+         E
+         3
+         A6E656E613A7569643A63616C6C69643A42544F43696C6A7332344D2E6F7376636932306E312E68386B2E7365633B75726E3A6E656E613A7569643A696E636964656E7469643A746669477346763462525A2E6F7376636932306E312E68386B2E736563
+      </string>
+   </correlatorData>
+   <cause>enteringDistribution</cause>
+   <servicesPermitted>
+      <callControlServices>
+         <clearConnection>true</clearConnection>
+         <deflectCall>true</deflectCall>
+      </callControlServices>
+      <callAssociatedServices/>
+      <mediaAttachementServices/>
+      <routeingServices/>
+      <voiceServices/>
+   </servicesPermitted>
+   <networkCalledDevice>
+      <deviceIdentifier>02911</deviceIdentifier>
+   </networkCalledDevice>
+   <associatedCallingDevice>
+      <notKnown/>
+   </associatedCallingDevice>
+   <mediaCallCharacteristics>
+      <mediaClass>
+         <voice>true</voice>
+         <image>false</image>
+         <message>false</message>
+      </mediaClass>
+   </mediaCallCharacteristics>
+   <callCharacteristics>
+      <acdCall>true</acdCall>
+      <priorityCall>true</priorityCall>
+      <highPriorityCall>true</highPriorityCall>
+      <sensitiveCall>true</sensitiveCall>
+   </callCharacteristics>
+   <extensions>
+      <privateData>
+         <private xmlns:scx="http://www.siemens.com/schema/csta">
+            <scx:cdrTrunkSeizureDateTime>2023/03/17 14:49:48</scx:cdrTrunkSeizureDateTime>
+            <scx:extendedServicesPermitted/>
+         </private>
+      </privateData>
+   </extensions>
+</DeliveredEvent>''')
+    # for i in a:
+    #     m = parseBytes(i)
+    #     print(m["monitorCrossRefID"])
+    #     if m["monitorCrossRefID"] is None:
+    #         print(m)
     for j in b:
         m = buildMessage(j, {"user": "12313213"}, eventid=2222)
         if m["deviceID"] and m["callID"]:
-            print(m["deviceID"], m["callID"])
+            # print(m["deviceID"], m["callID"])
             # m["deviceID"] = "user.deviceID"
             # m["callID"] = "user.callID"
-            print(m["deviceID"], m["callID"])
+            # print(m["deviceID"], m["callID"])
+            pass
         print(m)
-        print("`````", m["callID"])
-        print("=====", m["monitorCrossRefID"])
+        # print("`````", m["callID"])
+        # print("=====", m.body.get_all("deviceIdentifier"))
     last = buildMessage(j, {"user": "12313213"}, eventid=2222)["deviceObject"]
 
 

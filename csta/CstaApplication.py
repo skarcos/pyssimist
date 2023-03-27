@@ -15,7 +15,7 @@ from csta.CstaUser import CstaUser
 from csta.CstaParser import parseBytes, buildMessageFromFile, buildMessage
 
 
-def get_buffered_message(buffer, message, call_id=None):
+def get_buffered_message(buffer, message, call_id=None, monitor_x_ref_id=None, calling_device=None):
     """
     Get a message from the specified buffer.
     Best used within a threading.Lock context
@@ -23,15 +23,33 @@ def get_buffered_message(buffer, message, call_id=None):
     :param buffer: the buffer to search
     :param message: the message_type to get
     :param call_id: the callID (if any) to request
+    :param calling_device: used to separate csta events when needed
+    :param monitor_x_ref_id: the monitorCrossRefID (if any) to request
     :return: the corresponding CstaMessage object
     """
-    for i in range(len(buffer)):
-        buffered_message = buffer.pop(0)
-        if buffered_message.event == message and \
-                (not call_id or not buffered_message["callID"] or call_id == buffered_message["callID"]):
+    if message.endswith("Event"):
+        # This will fail for first csta event
+        key = str(call_id) + str(monitor_x_ref_id) + str(message)
+        if key in buffer:
+            buffered_message = buffer[key].pop(0)
+            if not buffer[key]:
+                buffer.pop(key)
             return buffered_message
-        else:
-            buffer.append(buffered_message)
+
+    # Here we look for first csta event, or csta responses
+    for k in buffer:
+        if ((message.endswith("Event") and call_id is None) or message.endswith("Response")) and \
+                k.endswith(str(message)):
+            buffered_message = buffer[k][0]
+
+            if (calling_device is not None and
+                    calling_device not in str(buffered_message).split("callingDevice")[1].split("callingDevice")[0]):
+                continue
+            else:
+                buffer[k].pop(0)
+                if not buffer[k]:
+                    buffer.pop(k)
+                return buffered_message
 
 
 class CstaApplication:
@@ -43,7 +61,7 @@ class CstaApplication:
         self.users = {}
         self.parameters = {}
         self.server = server
-        self.message_buffer = []
+        self.message_buffer = {}
         self.buffer_mod_time = None
         self.buffer_trigger_count = 0
         self.lock = Lock()
@@ -84,8 +102,15 @@ class CstaApplication:
             else:
                 inmessage = parseBytes(inbytes)
                 try:
-                    with self.lock:
-                        self.buffer_message(inmessage)
+                    net_object = self
+                    for dn in self.users:
+                        user = self.users[dn]
+                        if (inmessage.is_event() and user.monitorCrossRefID == inmessage["monitorCrossRefID"]) or \
+                                (inmessage.is_response() and inmessage.eventid in user.out_transactions):
+                            net_object = user
+                            break
+                    with net_object.lock:
+                        self.buffer_message(net_object, inmessage)
                 except:
                     exception(traceback.format_exc())
 
@@ -232,11 +257,12 @@ class CstaApplication:
 
         return m
 
-    def wait_for_csta_message(self, for_user, message, ignore_messages=(), timeout=5.0):
+    def wait_for_csta_message(self, for_user, message, calling_device=None, ignore_messages=(), timeout=5.0):
         """
         Wait for CSTA message
         :param for_user: The message intended recipient
         :param message: The message to wait for
+        :param calling_device: The calling device number. Used to separated csta events when necessary
         :param ignore_messages: Messages to ignore
         :param timeout: Defined timeout in seconds.
         :return: the CstaMessage received
@@ -251,25 +277,30 @@ class CstaApplication:
         net_object = self
         if for_user is not None:
             this_user = self.users[for_user]
-            user_xrefid = this_user.parameters.get("monitorCrossRefID", None)
+            # We are not using the below line, because if the same user is used, the xref id will be global
+            # not thread specific
+            # user_xrefid = this_user.parameters.get("monitorCrossRefID", None)
+            user_xrefid = this_user.monitorCrossRefID
             net_object = this_user
             callID = this_user.parameters["callID"]
         # checked_buffer = None
         t0_tout = time()
-        inmessage = get_buffered_message(net_object.message_buffer, message, callID)
+        with net_object.lock:
+            inmessage = get_buffered_message(net_object.message_buffer, message, callID, user_xrefid, calling_device)
         while not inmessage:
             # if not checked_buffer == net_object.buffer_mod_time:
             #     checked_buffer = net_object.buffer_mod_time
             if self.server:
                 continue
 
-#            if not inmessage:
+            #            if not inmessage:
             rem_timeout = timeout - (time() - t0_tout)
             if rem_timeout > 0:
                 net_object.buffer_event.wait(rem_timeout)
                 net_object.buffer_event.clear()
                 with net_object.lock:
-                    inmessage = get_buffered_message(net_object.message_buffer, message, callID)
+                    inmessage = get_buffered_message(net_object.message_buffer, message, callID, user_xrefid,
+                                                     calling_device)
                     if inmessage is None:
                         continue
             else:
@@ -298,7 +329,7 @@ class CstaApplication:
                     (isinstance(message, str) and message != inmessage_type) or
 
                     # received message type is not in list of expected types or
-                    (type(message) in (list, tuple) and not any([m == inmessage_type for m in message]))  or
+                    (type(message) in (list, tuple) and not any([m == inmessage_type for m in message])) or
 
                     # received message is event and has an unexpected callID
                     (inmessage.is_event() and
@@ -315,14 +346,14 @@ class CstaApplication:
                     # received message type is for another user (different xref_id and not MonitorStartResponse)
                     # # ie we are expecting message for a specific user
                     # (this_user is not None and
-                     # # the message has a xrefid tag and our user has an xrefid parameter (although it may be empty)
-                     # inmessage["monitorCrossRefID"] and user_xrefid is not None and
-                     # # # the message xrefid is different than our user's xrefid
-                     # inmessage["monitorCrossRefID"] != user_xrefid and
-                     # # the message is not a MonitorStartResponse. This is the normal case where we send MonitorStart
-                     # # at which time the user will not have xrefid assigned yet and we expect a response that we will
-                     # # use to assign xrefid to the user
-                     # inmessage_type != "MonitorStartResponse")
+                    # # the message has a xrefid tag and our user has an xrefid parameter (although it may be empty)
+                    # inmessage["monitorCrossRefID"] and user_xrefid is not None and
+                    # # # the message xrefid is different than our user's xrefid
+                    # inmessage["monitorCrossRefID"] != user_xrefid and
+                    # # the message is not a MonitorStartResponse. This is the normal case where we send MonitorStart
+                    # # at which time the user will not have xrefid assigned yet and we expect a response that we will
+                    # # use to assign xrefid to the user
+                    # inmessage_type != "MonitorStartResponse")
             ):
 
                 # buffer received message if it is intended for another user or if it is an event that came sooner
@@ -348,10 +379,10 @@ class CstaApplication:
                         #  inmessage.is_response() and
                         #  {inmessage.eventid: inmessage_type.replace("Response", "")} in other_users_transactions)
                 ):
-                    # with net_object.lock:
-                    with self.lock:
+                    with net_object.lock:
+                    # with self.lock:
                         # trying global lock to buffer messages
-                        self.buffer_message(inmessage, ntfy_subs=False)
+                        self.buffer_message(net_object, inmessage, ntfy_subs=False)
                     # warning(
                     #     "BUFFERED MESSAGE '{}' with callID '{}' for '{}' because I am '{}' waiting for '{}' in '{}' '{}'".format(
                     #         inmessage_type,
@@ -367,21 +398,22 @@ class CstaApplication:
                                                                            inmessage["monitorCrossRefID"],
                                                                            message))
                     else:
-                        raise AssertionError('Got "{}" with callID {}, eventid {} and xrefid {} while expecting "{}" with '
-                                             'callID {} and xrefid {}. '
-                                             'Known transactions are:\n"{}"\n{} '.format(inmessage_type,
-                                                                                         inmessage["callID"],
-                                                                                         inmessage.eventid,
-                                                                                         inmessage["monitorCrossRefID"],
-                                                                                         message,
-                                                                                         this_user.parameters.get(
-                                                                                             "callID",
-                                                                                             None),
-                                                                                         this_user.parameters.get(
-                                                                                             "monitorCrossRefID",
-                                                                                             None),
-                                                                                         this_user.out_transactions,
-                                                                                         inmessage))
+                        raise AssertionError(
+                            'Got "{}" with callID {}, eventid {} and xrefid {} while expecting "{}" with '
+                            'callID {} and xrefid {}. '
+                            'Known transactions are:\n"{}"\n{} '.format(inmessage_type,
+                                                                        inmessage["callID"],
+                                                                        inmessage.eventid,
+                                                                        inmessage["monitorCrossRefID"],
+                                                                        message,
+                                                                        this_user.parameters.get(
+                                                                            "callID",
+                                                                            None),
+                                                                        this_user.parameters.get(
+                                                                            "monitorCrossRefID",
+                                                                            None),
+                                                                        this_user.out_transactions,
+                                                                        inmessage))
         if this_user is not None:
             # Evaluate the invoke id
             this_user.update_incoming_transactions(inmessage)
@@ -389,29 +421,27 @@ class CstaApplication:
 
         return inmessage
 
-    def buffer_message(self, message, ntfy_subs=True):
+    def buffer_message(self, user, message, ntfy_subs=True):
         """
         Add csta message to csta user's or csta application's buffer.
         :param message: the message to buffer
         :param ntfy_subs: notify the user whose buffer was changed
+        :param user: the user who's buffer to use
         :return: None
         """
-        net_object = self
-        for dn in self.users:
-            user = self.users[dn]
-            if (message.is_event() and user.monitorCrossRefID == message["monitorCrossRefID"]) or \
-               (message.is_response() and message.eventid in user.out_transactions):
-                net_object = user
-                break
-        if net_object is self:
+        if user is self:
             warning("Unexpected message. Adding to global buffer: " + str(message))
 
-        net_object.message_buffer.append(message)
-        net_object.buffer_mod_time = time()
+        key = str(message["callID"]) + str(message["monitorCrossRefID"]) + str(message.event)
+        if key in user.message_buffer:
+            user.message_buffer[key].append(message)
+        else:
+            user.message_buffer[key] = [message]
+        user.buffer_mod_time = time()
         if ntfy_subs:
             self.buffer_trigger_count += 1
         if self.buffer_trigger_count:
-            net_object.buffer_event.set()
+            user.buffer_event.set()
             self.buffer_trigger_count -= 1
 
     def update_call_parameters(self, directory_number, inresponse):
