@@ -2,15 +2,18 @@
 Purpose: Simulate a SIP phone/line appearance/user
 Initial Version: Costas Skarakis
 """
-from threading import Timer
+from threading import Timer, Event
 
-from common.tc_logging import exception
+from _socket import timeout as sock_timeout
+import traceback
+from common.tc_logging import exception, warning
 from sip.SipParser import parseBytes, buildMessage
 import common.util as util
 import common.client as client
 import sip.SipFlows as flow
-from threading import Lock
+from threading import Lock, Thread
 from sip.SipMessage import SipMessage
+from time import time, sleep
 
 
 def dialog_hash(dialog):
@@ -58,11 +61,22 @@ class SipEndpoint(object):
         self.reply_to = self.send_in_ctx_of  # method alias
         self.secondary_lines = []
         self.message_buffer = []
-        self.buffer_mod_count = [0]  # using a int in a list to be able to share and muate between objects in use_link()
+        self.buffer_event = Event()
+        # self.buffer_mod_count = [0]  # using a int in a list to be able to share and muate between objects in use_link()
         self.registered = False
         self.re_register_timer = None
         self.busy = False
         self.lock = Lock()
+        self.wait_thread = None
+        self.shutdown_flag = False
+
+    def shutdown(self):
+        """
+        Try to stop threads and cleanup connections
+        """
+        self.shutdown_flag = True
+        self.link.shutdown()
+        self.wait_thread.join()
 
     def make_busy(self, busy=True):
         self.busy = busy
@@ -99,6 +113,38 @@ class SipEndpoint(object):
             raise NotImplementedError("{} client not implemented".format(protocol))
         self.link.connect(dest_ip, dest_port)
         self.set_address((local_ip, self.link.port))
+        self.start_wait_thread()
+
+    def start_wait_thread(self):
+        """
+        Starts a separate thread that will consume incoming csta traffic and place it into buffers
+        """
+        if self.wait_thread is None:
+            self.wait_thread = Thread(target=self.wait_loop)
+            self.wait_thread.start()
+
+    def wait_loop(self):
+        """
+        Continuously wait for incoming sip messages. Add all messages to buffers
+        """
+        while not self.shutdown_flag:
+            try:
+                inbytes = self.link.waitForSipData(timeout=None)
+                # inbytes = self.link.waitForSipData(timeout=timeout, client=link)
+            except ConnectionError:
+                # might need to add what kind of disconnection that was
+                warning("Disconnected. Exiting")
+                break
+            if inbytes is None:
+                warning("Disconnected. Will retry in 1 second")
+                sleep(1)
+            else:
+                inmessage = parseBytes(inbytes)
+                try:
+                    self.message_buffer.append(inmessage)
+                    self.buffer_event.set()
+                except:
+                    exception(traceback.format_exc())
 
     def update_to_tag(self, in_dialog):
         """
@@ -156,7 +202,8 @@ class SipEndpoint(object):
             self.dialogs = other.dialogs
             self.requests = other.requests
             self.last_messages_per_dialog = other.last_messages_per_dialog
-            self.buffer_mod_count = other.buffer_mod_count
+            self.buffer_event = other.buffer_event
+            self.wait_thread = other.wait_thread
         else:
             link = other
         protocol = ["TCP", "UDP"][link.socket.proto]
@@ -205,6 +252,28 @@ class SipEndpoint(object):
         self.parameters["fromTag"] = dialog["from_tag"]
         self.parameters["toTag"] = dialog["to_tag"]
         return dialog
+
+    def reset_dialog_and_transaction(self):
+        """
+        Reset current dialog and transaction to initial state
+        :return: None
+        """
+        self.parameters["viaBranch"] = None
+        self.parameters["epid"] = None
+        self.parameters["cseq"] = "0"
+        self.parameters["method"] = None
+        self.parameters["callId"] = None
+        self.parameters["fromTag"] = None
+        self.parameters["toTag"] = None
+        self.current_dialog = {
+            "Call-ID": None,
+            "from_tag": None,
+            "to_tag": None
+        }
+        self.current_transaction = {"via_branch": None,
+                                    "cseq": "0",
+                                    "method": None
+                                    }
 
     def switch_tags(self, dialog=None):
         if not dialog:
@@ -255,7 +324,8 @@ class SipEndpoint(object):
     def get_last_message_in(self, dialog):
         """ Get the last message sent or received in the provided dialog """
         # If we have received no messages yet return None
-        if self.current_dialog == {"Call-ID": None, "from_tag": None, "to_tag": None}:
+        null_d = {"Call-ID": None, "from_tag": None, "to_tag": None}
+        if self.current_dialog == null_d or dialog == null_d:
             return None
         with self.lock:
             # First check for complete dialogs
@@ -431,24 +501,25 @@ class SipEndpoint(object):
         """
         msg = None
         # for message in self.message_buffer:
-        for i in range(len(self.message_buffer)):
-            message = self.message_buffer.pop(0)
-            m_dialog = message.get_dialog()
-            m_type = message.get_status_or_method()
-            # If we have received no messages yet return the first message in the buffer
-            if self.current_dialog == {"Call-ID": None, "from_tag": None, "to_tag": None} or \
-                    (m_dialog["Call-ID"] == dialog["Call-ID"] and
-                     # m_dialog["from_tag"] == dialog["from_tag"] and
-                     m_type == message_type):
-                msg = message
-                break
-            else:
-                self.message_buffer.append(message)
+        with self.lock:
+            for i in range(len(self.message_buffer)):
+                message = self.message_buffer.pop(0)
+                m_dialog = message.get_dialog()
+                m_type = message.get_status_or_method()
+                # If we have received no messages yet return the first message in the buffer
+                if m_type == message_type \
+                        and (self.current_dialog["Call-ID"] is None
+                             or dialog["Call-ID"] is None
+                             or m_dialog["Call-ID"] == dialog["Call-ID"]):
+                    msg = message
+                    break
+                else:
+                    self.message_buffer.append(message)
         # if msg is None:
         #     print(self.number, "Buffer returned None for", message_type, "in callid and from_tag", dialog["Call-ID"], dialog["from_tag"], "although it has", self.message_buffer)
         return msg
 
-    def wait_for_message(self, message_type, dialog=None, ignore_messages=(), link=None, timeout=5.0):
+    def wait_for_message(self, message_type, dialog=None, ignore_messages=(), timeout=5.0):
         """
         Wait for a specific type of SIP message.
         :param message_type: is a string that we will make sure is
@@ -464,8 +535,7 @@ class SipEndpoint(object):
         :param timeout: Defined timeout in seconds.
         :return: A SipMessage constructed from the incoming message
         """
-        if not link:
-            link = self.link
+
         if not dialog:
             dialog = {"Call-ID": self.parameters["callId"],
                       "from_tag": self.parameters["fromTag"]}
@@ -475,25 +545,33 @@ class SipEndpoint(object):
         else:
             dialog = self.get_complete_dialog(dialog)
 
-        inmessage = None
         last_sent_message = self.get_last_message_in(dialog)
+        transaction = None
         if last_sent_message:
             transaction = last_sent_message.get_transaction()
-        # len_buffer = len(self.message_buffer)
 
-        local_mod_count = 0
+        t0_tout = time()
+        inmessage = self.get_buffered_message(message_type, dialog)
+        inmessage = self.handleDA(last_sent_message, inmessage)
+
         while not inmessage:
-
-            if local_mod_count < self.buffer_mod_count[0]:
-                # print(self.number, "Checking buffer for", message_type, "with callid", dialog["Call-ID"])
-                local_mod_count = self.buffer_mod_count[0]
-                # first get a message from the buffer
+            rem_timeout = timeout - (time() - t0_tout)
+            if rem_timeout > 0:
+                self.buffer_event.wait(rem_timeout)
+                self.buffer_event.clear()
                 inmessage = self.get_buffered_message(message_type, dialog)
+                inmessage = self.handleDA(last_sent_message, inmessage)
+                if inmessage is None:
+                    continue
+            else:
+                exception(str(self.number) + " No " + str(message_type) + " " + str(self.message_buffer))
+                raise sock_timeout
 
-            if not inmessage:
-                # no (more) buffered messages. try the network
-                inbytes = self.link.waitForSipData(timeout=timeout, client=link)
-                inmessage = self.handleDA(last_sent_message, parseBytes(inbytes))
+
+            # if not inmessage:
+            #     # no (more) buffered messages. try the network
+            #     inbytes = self.link.waitForSipData(timeout=timeout, client=link)
+            #     inmessage = self.handleDA(last_sent_message, parseBytes(inbytes))
 
             inmessage_type = inmessage.get_status_or_method()
             inmessage_dialog = inmessage.get_dialog()
@@ -509,7 +587,7 @@ class SipEndpoint(object):
                 # print(self.number, "My callid is", dialog["Call-ID"])
 
                 self.message_buffer.append(inmessage)
-                self.buffer_mod_count[0] += 1
+                self.buffer_event.set()
                 inmessage = None
                 continue
 
@@ -526,7 +604,7 @@ class SipEndpoint(object):
                     # message is part of another active dialog or a new call, so buffer it
                     # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
                     self.message_buffer.append(inmessage)
-                    self.buffer_mod_count[0] += 1
+                    self.buffer_event.set()
                     # print("Appended {} with {} to buffer. Will keep waiting for {} in {} ".format(inmessage_type,
                     #                                                                        inmessage_dialog,
                     #                                                                        message_type,
@@ -552,7 +630,7 @@ class SipEndpoint(object):
             inmessage_transaction = inmessage.get_transaction()
             self.set_transaction(inmessage_transaction)
         else:
-            assert inmessage.cseq_method == transaction["method"], \
+            assert inmessage.get_transaction()["method"] == transaction["method"], \
                 "Got {} to {} instead of {} to {}".format(inmessage.get_status_or_method(),
                                                           inmessage.cseq_method,
                                                           message_type,
@@ -610,6 +688,8 @@ class SipEndpoint(object):
 
     def handleDA(self, request, response):
         """" Add DA to message and send again """
+        if response is None:
+            return
         # Usual case in lab, password same as username
         if "da_pass" not in self.parameters or "da_user" not in self.parameters:
             self.set_digest_credentials(self.number, self.number, "")
@@ -630,6 +710,7 @@ class SipEndpoint(object):
             self.re_register_timer = Timer(re_register_time, self.register, (expiration_in_seconds, re_register_time))
             self.re_register_timer.start()
         flow.register(self, expiration_in_seconds)
+        self.reset_dialog_and_transaction()
         self.registered = True
 
     def unregister(self):
