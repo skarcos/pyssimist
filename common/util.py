@@ -372,7 +372,7 @@ class Load(object):
         self.duration = duration
         self.stopCondition = stopCondition
         self.startTime = time()
-        self.active = []
+        self.active = set()
         st_logger = logging.getLogger('Statistics')
         handler = logging.handlers.RotatingFileHandler("Statistics.txt", mode="w", maxBytes=20000000, backupCount=5)
         st_logger.addHandler(handler)
@@ -412,7 +412,7 @@ class Load(object):
     def run_next_flow(self):
         c = LoadThread(target=self.flow, args=self.args)
         c.start()
-        self.active.append(c)
+        self.active.add(c)
         self.calls["Started"] += 1
 
     def monitor(self):
@@ -431,7 +431,7 @@ class Load(object):
                 self.calls["Total Average Calls Per second"] = average_cps
                 calls_prev = calls_now
                 t_prev = t_now
-            for inst in (ins for ins in self.active if not ins.is_alive()):
+            for inst in (ins for ins in self.active.copy() if not ins.is_alive()):
                 try:
                     inst.join()
                     if inst.exc:
@@ -477,8 +477,16 @@ class LoadThread(Thread):
             logger.exception("Exception in Thread: " + self.name)
             logger.exception(traceback.format_exc())
             # raise
+        finally:
+            self.cleanup()
 
     def join(self, timeout=None):
         super().join(timeout)
         if self.exc:
             raise self.exc
+
+    def cleanup(self, *args, **kwargs):
+        """
+        Custom cleanup method that will be executed when Thread exits. Should be overridden
+        """
+        pass
