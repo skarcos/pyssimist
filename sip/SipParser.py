@@ -159,5 +159,6 @@ X-Siemens-OSS: OpenScape SBC V10 R9.00.00-1/BCF/THIG
     print(byem.contents())
     byem.make_response_to(ackm)
     print(byem.contents())
+    print(hash(byem))
 
 

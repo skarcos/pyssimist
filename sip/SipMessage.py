@@ -55,22 +55,25 @@ class SipMessage(object):
             if M:
                 self.via_branch = M.group(1)
 
-    def __eq__(self, message_or_method_or_status):
-        """
-        Override equality operator to return comparison only based on the method or status string
+    def __hash__(self):
+        return hash(repr(self))
 
-        :param message_or_method_or_status: The method or status string in the request line of the message
+    def __eq__(self, other):
+        """
+        Override equality operator to return comparison based on string comparison
+
+        :param other: The other string message or SipMessage to compare against
         :return: True or False
         """
-        if isinstance(message_or_method_or_status, str):
-            other_status_or_method = message_or_method_or_status
-        elif isinstance(message_or_method_or_status, SipMessage):
-            other_status_or_method = message_or_method_or_status.get_status_or_method()
+        if isinstance(other, str):
+            other_contents = other
+        elif isinstance(other, SipMessage):
+            other_contents = repr(other)
         else:
             raise Exception("Can only compare SipMessage to str or SipMessage, "
-                            "not {}".format(type(message_or_method_or_status)))
+                            "not {}".format(type(other)))
 
-        return self.get_status_or_method() == other_status_or_method
+        return repr(self) == other_contents
 
     def __getitem__(self, key):
         for k in self.header:

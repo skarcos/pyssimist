@@ -60,7 +60,7 @@ class SipEndpoint(object):
         self.waitForMessage = self.wait_for_message  # compatibility alias
         self.reply_to = self.send_in_ctx_of  # method alias
         self.secondary_lines = []
-        self.message_buffer = []
+        self.message_buffer = set()
         self.buffer_event = Event()
         # self.buffer_mod_count = [0]  # using a int in a list to be able to share and muate between objects in use_link()
         self.registered = False
@@ -141,7 +141,7 @@ class SipEndpoint(object):
             else:
                 inmessage = parseBytes(inbytes)
                 try:
-                    self.message_buffer.append(inmessage)
+                    self.message_buffer.add(inmessage)
                     self.buffer_event.set()
                 except:
                     exception(traceback.format_exc())
@@ -502,8 +502,7 @@ class SipEndpoint(object):
         msg = None
         # for message in self.message_buffer:
         with self.lock:
-            for i in range(len(self.message_buffer)):
-                message = self.message_buffer.pop(0)
+            for message in self.message_buffer:
                 m_dialog = message.get_dialog()
                 m_type = message.get_status_or_method()
                 # If we have received no messages yet return the first message in the buffer
@@ -512,9 +511,10 @@ class SipEndpoint(object):
                              or dialog["Call-ID"] is None
                              or m_dialog["Call-ID"] == dialog["Call-ID"]):
                     msg = message
+                    self.message_buffer.remove(message)
                     break
-                else:
-                    self.message_buffer.append(message)
+                # else:
+                #     self.message_buffer.append(message)
         # if msg is None:
         #     print(self.number, "Buffer returned None for", message_type, "in callid and from_tag", dialog["Call-ID"], dialog["from_tag"], "although it has", self.message_buffer)
         return msg
@@ -564,9 +564,10 @@ class SipEndpoint(object):
                 if inmessage is None:
                     continue
             else:
-                exception(str(self.number) + " No " + str(message_type) + " " + str(self.message_buffer))
+                exception("%s No %s. Buffer length: %d." % (self.number,
+                                                            message_type,
+                                                            len(self.message_buffer)))
                 raise sock_timeout
-
 
             # if not inmessage:
             #     # no (more) buffered messages. try the network
@@ -586,7 +587,7 @@ class SipEndpoint(object):
                 # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
                 # print(self.number, "My callid is", dialog["Call-ID"])
 
-                self.message_buffer.append(inmessage)
+                self.message_buffer.add(inmessage)
                 self.buffer_event.set()
                 inmessage = None
                 continue
@@ -603,7 +604,7 @@ class SipEndpoint(object):
                 if self.get_complete_dialog(inmessage_dialog) or inmessage_type == "INVITE":
                     # message is part of another active dialog or a new call, so buffer it
                     # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
-                    self.message_buffer.append(inmessage)
+                    self.message_buffer.add(inmessage)
                     self.buffer_event.set()
                     # print("Appended {} with {} to buffer. Will keep waiting for {} in {} ".format(inmessage_type,
                     #                                                                        inmessage_dialog,
@@ -614,7 +615,7 @@ class SipEndpoint(object):
                     d = ["sip:{}@".format(line.number) in inmessage["To"] for line in self.secondary_lines]
                     if any(d):
                         # message is meant for another line in this device
-                        self.secondary_lines[d.index(True)].message_buffer.append(inmessage)
+                        self.secondary_lines[d.index(True)].message_buffer.add(inmessage)
                         inmessage = None
                     else:
                         raise AssertionError('{}: Got "{}" in {} while expecting "{}" in {}. '
@@ -632,7 +633,7 @@ class SipEndpoint(object):
         else:
             assert inmessage.get_transaction()["method"] == transaction["method"], \
                 "Got {} to {} instead of {} to {}".format(inmessage.get_status_or_method(),
-                                                          inmessage.cseq_method,
+                                                          inmessage.get_transaction()["method"],
                                                           message_type,
                                                           transaction["method"])
             self.update_to_tag(inmessage.get_dialog())
