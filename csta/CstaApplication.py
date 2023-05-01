@@ -304,7 +304,10 @@ class CstaApplication:
                     if inmessage is None:
                         continue
             else:
-                exception(str(for_user) + " No " + str(message) + " " + str(net_object.message_buffer))
+                exception("%s (CSTA) No %s. Buffer lengths: %s. " % (for_user,
+                                                                     message,
+                                                                     str([(k, len(net_object.message_buffer[k]))
+                                                                          for k in net_object.message_buffer])))
                 raise sock_timeout
 
                 # try:
