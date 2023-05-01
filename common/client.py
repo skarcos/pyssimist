@@ -7,7 +7,7 @@ import socket
 import ssl
 import io
 from threading import Lock
-
+from time import sleep
 from common.tc_logging import debug
 from common.util import wait_for_sip_data, NoData, IncompleteData
 
@@ -146,6 +146,7 @@ class TCPClient(object):
                 data = b''
                 while len(data) < datalength:
                     data += self.socket.recv(datalength - len(data))
+                    sleep(0.001)
                 debug(
                     "Received on port {} message of length {}:\n\n".format(self.port, datalength) + (header + data).decode(
                         "utf8",
