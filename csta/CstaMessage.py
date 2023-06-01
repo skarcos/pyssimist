@@ -6,6 +6,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 import io
+from common import util
 
 xmlpath = os.path.join(os.path.realpath(__file__).replace(os.path.basename(__file__), ''), "CstaPool")
 
@@ -33,26 +34,16 @@ class CstaMessage(object):
     Representation of a CSTA message
     """
 
-    def __init__(self, header, xml_tree, str_body=None, encoding="UTF-8",
-                 ns=(("", "http://www.ecma-international.org/standards/ecma-323/csta/ed4"),)):
+    def __init__(self, header, body):
         # s_ip,s_port,d_ip,d_port
         self.eventid = int(header[-4:])
         self.size = header[:4]
         self.header = header
-        self.encoding = encoding
-        self.str_body = str_body
-        self.body = xml_tree
-        self.namespace = ""
-        self.root = self.body.getroot()
-        for namespace in ns:
-            if not re.match(r"ns\d+", namespace[0]):
-                # namespace is pair of (name, url)
-                ET.register_namespace(*namespace)
-            if namespace[0] == "":
-                # default namespace
-                self.namespace = namespace[1]
-#        self.event = self.root.tag.replace("{" + self.namespace + "}", '')
-        self.event = re.match(r"({.*})?(.*)", self.root.tag).group(2)
+        self.encoding = body.encoding
+        self.body = body
+        self.root = body.root
+        self.namespace = body.namespace
+        self.event = body.event
 
     def is_response(self):
         return is_response(self.event)
@@ -64,6 +55,11 @@ class CstaMessage(object):
         return is_event(self.event)
 
     def find_element(self, key):
+        """
+        Obsolete. Kept for backwards compatibility
+        :param key:
+        :return:
+        """
         element = None
         for tag in self.body.iter():
             element = tag.find(key)
@@ -78,23 +74,18 @@ class CstaMessage(object):
         return element
 
     def __getitem__(self, key):
-        element = self.find_element(key)
+        element = self.body.get_tag(key)
         if element is None:
             return None
         else:
             return element.text
 
     def __setitem__(self, key, value):
-        element = self.find_element(key)
+        element = self.body.get_tag(key)
         element.text = value
 
     def __repr__(self):
-        result = io.BytesIO()
-        self.body.write(result,
-                        xml_declaration=self.encoding,
-                        encoding=self.encoding)
-        result.flush()
-        return result.getvalue().decode(encoding=self.encoding)
+        return repr(self.body)
 
     def __str__(self):
         return repr(self)

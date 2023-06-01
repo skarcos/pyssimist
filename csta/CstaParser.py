@@ -5,6 +5,7 @@ Initial Version: Costas Skarakis 11/11/2018
 import re
 import xml.etree.ElementTree as ET
 from csta.CstaMessage import CstaMessage
+from common.util import XmlBody
 
 ENCODING = "utf8"
 
@@ -37,30 +38,20 @@ def parseBytes(bString):
         encoding = ENCODING
     header = bString[:8]
     try:
-        body = bString[8:].strip().decode(encoding)
+        body = XmlBody(bString[8:].strip().decode(encoding))
     except:
         print("Cannot decode CSTA message with ", encoding)
         print(bString)
         raise
     try:
-        root = ET.fromstring(body)
+        root = body.root
     except:
         print("Cannot parse CSTA message string:")
         print(header)
         print(body)
         raise
-    tree = ET.ElementTree(root)
-    # ns=re.search("^{(.*)}",root.tag)
-    XMLParser = ET.XMLPullParser(events=['start-ns'])
-    XMLParser.feed(body)
-    ns = [e[1] for e in XMLParser.read_events()]
-    if ns:
-        # namespace=ns.group(1)
-        cstamessage = CstaMessage(header, tree, body, encoding=encoding, ns=ns)
-    else:
-        # print("Warning: No namespace defined in message",root.tag)
-        cstamessage = CstaMessage(header, tree, body, encoding=encoding)
-    return cstamessage
+
+    return CstaMessage(header, body)
 
 
 if __name__ == "__main__":
@@ -200,6 +191,73 @@ if __name__ == "__main__":
         # print("`````", m["callID"])
         # print("=====", m.body.get_all("deviceIdentifier"))
     last = buildMessage(j, {"user": "12313213"}, eventid=2222)["deviceObject"]
+    te = """<?xml version="1.0" encoding="UTF-8"?>
+<TransferedEvent xmlns="http://www.ecma-international.org/standards/ecma-323/csta/ed4">
+<monitorCrossRefID>1184300014</monitorCrossRefID>
+<primaryOldCall>
+<callID>FF00010000000000CFB6706408000000</callID>
+<deviceID>+17867104700</deviceID>
+</primaryOldCall>
+<transferringDevice>
+<deviceIdentifier>+17867104700</deviceIdentifier>
+</transferringDevice>
+<transferredToDevice>
+<deviceIdentifier>N&lt;+17867100001&gt;Line00001;displayNumber=00001</deviceIdentifier>
+</transferredToDevice>
+<transferredConnections>
+<connectionListItem>
+<newConnection>
+<callID>0300010000000000CFB6706408000000</callID>
+<deviceID>+17867100001</deviceID>
+</newConnection>
+<endpoint>
+<deviceID>N&lt;+17867100001&gt;Line00001;displayNumber=00001</deviceID>
+</endpoint>
+</connectionListItem>
+<connectionListItem>
+<newConnection>
+<callID>0300010000000000CFB6706408000000</callID>
+<deviceID>N&lt;+17867100000&gt;;uid=FF00010000000000CFB6706408000000</deviceID>
+</newConnection>
+<endpoint>
+<deviceID>N&lt;+17867100000&gt;+ 30(210)8216100;displayNumber=7867100000;uid=FF00010000000000CFB6706408000000</deviceID>
+</endpoint>
+</connectionListItem>
+</transferredConnections>
+<localConnectionInfo>null</localConnectionInfo>
+<correlatorData>
+<string>75726E3A6E656E613A7569643A63616C6C69643A62636631393235303838333532313330373135383A657362632E6E65743B75726E3A6E656E613A7569643A696E636964656E7469643A62636631393235303838333532313330373135383A657362632E6E6574</string>
+</correlatorData>
+<cause>singleStepTransfer</cause>
+<servicesPermitted>
+<callControlServices/>
+<callAssociatedServices/>
+<mediaAttachementServices/>
+<routeingServices/>
+<voiceServices/>
+</servicesPermitted>
+<mediaCallCharacteristics>
+<mediaClass>
+<voice>true</voice>
+<image>false</image>
+<message>false</message>
+</mediaClass>
+</mediaCallCharacteristics>
+<callCharacteristics>
+<priorityCall>true</priorityCall>
+<highPriorityCall>true</highPriorityCall>
+<sensitiveCall>true</sensitiveCall>
+</callCharacteristics>
+<extensions>
+<privateData>
+<private xmlns:scx="http://www.siemens.com/schema/csta">
+<scx:extendedServicesPermitted/>
+</private>
+</privateData>
+</extensions>
+</TransferedEvent>"""
+    tem = buildMessage(te)
+    print(tem["callID"])
 
 
 

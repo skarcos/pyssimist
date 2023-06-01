@@ -204,12 +204,12 @@ class XmlBody:
                  default_namespace="http://www.ecma-international.org/standards/ecma-323/csta/ed4"):
         self.encoding = default_encoding
         if isinstance(xml_content, bytes):
-            xml_encoding = re.search(b"encoding=[\'\"](.*)[\'\"] ?\?>", xml_content)
+            xml_encoding = re.search(b"encoding=[\'\"](\S*)[\'\"].* ?\?\>", xml_content)
             if xml_encoding:
                 self.encoding = xml_encoding.group(1).decode(encoding=default_encoding)
             self.ns_map = self.parse_map(io.StringIO(xml_content.decode(self.encoding)))
         else:
-            xml_encoding = re.search("encoding=[\'\"](.*)[\'\"] ?\?>", xml_content)
+            xml_encoding = re.search("encoding=[\'\"](\S*)[\'\"].* ?\?\>", xml_content)
             if xml_encoding:
                 self.encoding = xml_encoding.group(1)
             self.ns_map = self.parse_map(io.StringIO(xml_content))
@@ -248,8 +248,10 @@ class XmlBody:
         count = 0
         for event, elem in ET.iterparse(file, events):
             if event == "start-ns":
-                ns_map.append(("ns%d" % count, elem[1]))
-                count += 1
+                ns_map.append(elem)
+                if not elem[0].startswith("ns"):
+                    ET.register_namespace(*elem)
+
         return dict(ns_map)
 
     def __getitem__(self, key, position="root"):
