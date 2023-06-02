@@ -274,40 +274,27 @@ class XmlBody:
                     if element: break
             return element
 
-    def get_tag(self, tag, parent="root"):
+    def get_tag(self, tag):
         """
         Find a tag using tag name, ignoring namespaces
         :param tag: The name of the tag
         :return:
         """
-        if parent == "root":
-            parent = self.root
-        ch = None
-        if parent.tag.endswith("}" + tag):
-            return parent
-        else:
-            for child in parent:
-                ch = self.get_tag(tag, parent=child)
-                if ch is not None:
-                    return ch
+        for item in self.root.iter():
+            if item.tag.endswith("}" + tag):
+                return item
 
-    def get_all(self, tag, position="root"):
+    def get_all(self, tag):
         """
          Find all tags with this name in all namespaces
         :param key: The requested tag name
         :param position: The element to look below
         :return: A list of all elements with specified tag
         """
-        if position == "root":
-            position = self.root
-        elements = []
-        if position.tag.endswith("}" + tag):
-            elements.append(position)
-        else:
-            for child in position:
-                ch = self.get_tag(tag, parent=child)
-                if ch is not None:
-                    elements.append(ch)
+        elements=[]
+        for item in self.root.iter():
+            if item.tag.endswith("}" + tag):
+                elements.append(item)
         return elements
 
     def get_child(self, parent, tag):

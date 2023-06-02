@@ -257,7 +257,8 @@ if __name__ == "__main__":
 </extensions>
 </TransferedEvent>"""
     tem = buildMessage(te)
-    print(tem["callID"])
+    print(tem)
+    print(tem.get_all("callID"))
 
 
 

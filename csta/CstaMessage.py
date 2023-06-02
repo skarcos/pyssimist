@@ -80,6 +80,13 @@ class CstaMessage(object):
         else:
             return element.text
 
+    def get_all(self, key):
+        elements = self.body.get_all(key)
+        if elements is None:
+            return []
+        else:
+            return [element.text for element in elements]
+
     def __setitem__(self, key, value):
         element = self.body.get_tag(key)
         element.text = value
