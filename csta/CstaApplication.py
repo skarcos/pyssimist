@@ -29,12 +29,21 @@ def get_buffered_message(buffer, message, call_id=None, monitor_x_ref_id=None, c
     """
     if message.endswith("Event"):
         # This will fail for first csta event
-        key = str(call_id) + str(monitor_x_ref_id) + str(message)
+        key = str(monitor_x_ref_id) + str(message)
         if key in buffer:
-            buffered_message = buffer[key].pop(0)
-            if not buffer[key]:
-                buffer.pop(key)
-            return buffered_message
+            # message_index = None
+            message_index = 0
+            # for index in range(len(buffer[key])):
+            #     # Csta Event could include multiple callID tags. Eg TransferredEvent
+            #     call_id_list = buffer[key][index].get_all("callID")
+            #     if str(call_id) in call_id_list or (not call_id and not call_id_list):
+            #         message_index = index
+            #         break
+            if message_index is not None:
+                buffered_message = buffer[key].pop(message_index)
+                if not buffer[key]:
+                    buffer.pop(key)
+                return buffered_message
 
     # Here we look for first csta event, or csta responses
     for k in buffer:
@@ -332,14 +341,15 @@ class CstaApplication:
                     (isinstance(message, str) and message != inmessage_type) or
 
                     # received message type is not in list of expected types or
-                    (type(message) in (list, tuple) and not any([m == inmessage_type for m in message])) or
+                    (type(message) in (list, tuple) and not any([m == inmessage_type for m in message]))
+                    # or
 
-                    # received message is event and has an unexpected callID
-                    (inmessage.is_event() and
-                     this_user is not None and
-                     inmessage["callID"] and
-                     callID and
-                     callID != inmessage["callID"])  # or
+                    # # received message is event and has an unexpected callID
+                    # (inmessage.is_event() and
+                    #  this_user is not None and
+                    #  inmessage["callID"] and
+                    #  callID and
+                    #  callID != inmessage["callID"])  # or
 
                     # received message is a csta response that has an unknown/incorrect invokeID (eventid)
                     # (this_user is not None and
@@ -373,10 +383,11 @@ class CstaApplication:
 
                         (inmessage.is_event() and
                          inmessage["monitorCrossRefID"] and
-                         user_xrefid is None) or
+                         user_xrefid is None)
+                        # or
 
-                        (inmessage.is_event() and
-                         inmessage["callID"] in this_user.calls)
+                        # (inmessage.is_event() and
+                        #  inmessage["callID"] in this_user.calls)
 
                         # (this_user is not None and
                         #  inmessage.is_response() and
@@ -435,7 +446,7 @@ class CstaApplication:
         if user is self:
             warning("Unexpected message. Adding to global buffer: " + str(message))
 
-        key = str(message["callID"]) + str(message["monitorCrossRefID"]) + str(message.event)
+        key = str(message["monitorCrossRefID"]) + str(message.event)
         if key in user.message_buffer:
             user.message_buffer[key].append(message)
         else:
