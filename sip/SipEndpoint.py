@@ -140,6 +140,7 @@ class SipEndpoint(object):
                 sleep(1)
             else:
                 inmessage = parseBytes(inbytes)
+                # TODO: Add "on message" functionality, eg 200OK on OPTIONS
                 try:
                     self.message_buffer.add(inmessage)
                     self.buffer_event.set()
@@ -384,7 +385,7 @@ class SipEndpoint(object):
                     # TODO: check if reRegistrations will work
                     self.requests[self.dialogs.index(dialog)].append(method)
         transaction = {"via_branch": branch, "cseq": cseq, "method": method}
-        self.current_transaction = transaction
+        self.set_transaction(transaction)
         return transaction
 
     def send_new(self, target_sip_ep=None, message_string="", expected_response=None, ignore_messages=[]):
