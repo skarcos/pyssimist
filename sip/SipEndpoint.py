@@ -44,6 +44,7 @@ class SipEndpoint(object):
                            }
         self.last_messages_per_dialog = []
         self.dialogs = []
+        self.known_call_ids = []
         self.requests = []
         self.current_dialog = {
             "Call-ID": None,
@@ -244,6 +245,7 @@ class SipEndpoint(object):
         dialog = self.get_complete_dialog(dialog)
         if dialog not in self.dialogs:
             self.dialogs.append(dialog)
+            self.known_call_ids.append(dialog["Call-ID"])
             self.requests.append([])
             # If we don't know this dialog it means we didn't started so it must be an incoming Request
             with self.lock:
@@ -319,6 +321,7 @@ class SipEndpoint(object):
         with self.lock:
             self.tags[dialog_hash(dialog)] = "from_tag"
         self.dialogs.append(dialog)
+        self.known_call_ids.append(dialog["Call-ID"])
         self.requests.append([])
         return dialog
 
@@ -326,7 +329,7 @@ class SipEndpoint(object):
         """ Get the last message sent or received in the provided dialog """
         # If we have received no messages yet return None
         null_d = {"Call-ID": None, "from_tag": None, "to_tag": None}
-        if self.current_dialog == null_d or dialog == null_d:
+        if self.current_dialog == null_d or dialog == null_d or dialog is None:
             return None
         with self.lock:
             # First check for complete dialogs
@@ -509,8 +512,8 @@ class SipEndpoint(object):
                 # If we have received no messages yet return the first message in the buffer
                 if m_type == message_type \
                         and (self.current_dialog["Call-ID"] is None
-                             or dialog["Call-ID"] is None
-                             or m_dialog["Call-ID"] == dialog["Call-ID"]):
+                             or (dialog is not None and m_dialog["Call-ID"] == dialog["Call-ID"])
+                             or (dialog is None and m_dialog["Call-ID"] in self.known_call_ids)):
                     msg = message
                     self.message_buffer.remove(message)
                     break
@@ -537,14 +540,21 @@ class SipEndpoint(object):
         :return: A SipMessage constructed from the incoming message
         """
 
-        if not dialog:
+        # if not dialog:
+        #     dialog = {"Call-ID": self.parameters["callId"],
+        #               "from_tag": self.parameters["fromTag"]}
+        #     if "toTag" in self.parameters:
+        #         dialog["to_tag"] = self.parameters["toTag"]
+
+        if dialog:
+            dialog = self.get_complete_dialog(dialog)
+            explicit_dialog = dialog
+        else:
+            explicit_dialog = None
             dialog = {"Call-ID": self.parameters["callId"],
                       "from_tag": self.parameters["fromTag"]}
             if "toTag" in self.parameters:
                 dialog["to_tag"] = self.parameters["toTag"]
-
-        else:
-            dialog = self.get_complete_dialog(dialog)
 
         last_sent_message = self.get_last_message_in(dialog)
         transaction = None
@@ -552,7 +562,7 @@ class SipEndpoint(object):
             transaction = last_sent_message.get_transaction()
 
         t0_tout = time()
-        inmessage = self.get_buffered_message(message_type, dialog)
+        inmessage = self.get_buffered_message(message_type, explicit_dialog)
         inmessage = self.handleDA(last_sent_message, inmessage)
 
         while not inmessage:
@@ -560,7 +570,7 @@ class SipEndpoint(object):
             if rem_timeout > 0:
                 self.buffer_event.wait(rem_timeout)
                 self.buffer_event.clear()
-                inmessage = self.get_buffered_message(message_type, dialog)
+                inmessage = self.get_buffered_message(message_type, explicit_dialog)
                 inmessage = self.handleDA(last_sent_message, inmessage)
                 if inmessage is None:
                     continue
@@ -580,10 +590,10 @@ class SipEndpoint(object):
             inmessage.cseq_method = inmessage.get_transaction()["method"]
 
             # when sharing buffers we can get a message of other endpoints
-            # buffer message of correct type but incorrect callid
+            # buffer message of correct type but unknown callid
             # keep it if we are mentioned in the "To" header
             if inmessage_type == message_type and \
-                    inmessage_dialog["Call-ID"] != dialog["Call-ID"] and \
+                    inmessage_dialog["Call-ID"] not in self.known_call_ids and \
                     "sip:{}@{}".format(self.number, self.ip) not in inmessage["To"]:
                 # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
                 # print(self.number, "My callid is", dialog["Call-ID"])
