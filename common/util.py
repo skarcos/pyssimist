@@ -281,7 +281,7 @@ class XmlBody:
         :return:
         """
         for item in self.root.iter():
-            if item.tag.endswith("}" + tag):
+            if item.tag == tag or item.tag.endswith("}" + tag):
                 return item
 
     def get_all(self, tag):
@@ -293,7 +293,7 @@ class XmlBody:
         """
         elements=[]
         for item in self.root.iter():
-            if item.tag.endswith("}" + tag):
+            if item.tag.endswith("}" + tag) or item.tag == tag:
                 elements.append(item)
         return elements
 

@@ -181,13 +181,14 @@ if __name__ == "__main__":
     #         print(m)
     for j in b:
         m = buildMessage(j, {"user": "12313213"}, eventid=2222)
+        print(m["callID"])
         if m["deviceID"] and m["callID"]:
             # print(m["deviceID"], m["callID"])
             # m["deviceID"] = "user.deviceID"
             # m["callID"] = "user.callID"
             # print(m["deviceID"], m["callID"])
             pass
-        print(m)
+        print(m.get_all("callID"))
         # print("`````", m["callID"])
         # print("=====", m.body.get_all("deviceIdentifier"))
     last = buildMessage(j, {"user": "12313213"}, eventid=2222)["deviceObject"]
