@@ -91,7 +91,7 @@ class CstaApplication:
         """
         Starts a separate thread that will consume incoming csta traffic and place it into buffers
         """
-        self.wait_thread = Thread(target=self.wait_loop)
+        self.wait_thread = Thread(target=self.wait_loop, daemon=True)
         self.wait_thread.start()
 
     def wait_loop(self):

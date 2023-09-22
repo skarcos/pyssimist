@@ -121,7 +121,7 @@ class SipEndpoint(object):
         Starts a separate thread that will consume incoming csta traffic and place it into buffers
         """
         if self.wait_thread is None:
-            self.wait_thread = Thread(target=self.wait_loop)
+            self.wait_thread = Thread(target=self.wait_loop, daemon=True)
             self.wait_thread.start()
 
     def wait_loop(self):
@@ -329,7 +329,7 @@ class SipEndpoint(object):
         """ Get the last message sent or received in the provided dialog """
         # If we have received no messages yet return None
         null_d = {"Call-ID": None, "from_tag": None, "to_tag": None}
-        if self.current_dialog == null_d or dialog == null_d or dialog is None:
+        if self.current_dialog == null_d or dialog == null_d:
             return None
         with self.lock:
             # First check for complete dialogs
