@@ -510,7 +510,7 @@ class SipEndpoint(object):
                 m_dialog = message.get_dialog()
                 m_type = message.get_status_or_method()
                 # If we have received no messages yet return the first message in the buffer
-                if m_type == message_type \
+                if message_type in m_type \
                         and (self.current_dialog["Call-ID"] is None
                              or (dialog is not None and m_dialog["Call-ID"] == dialog["Call-ID"])
                              or (dialog is None and m_dialog["Call-ID"] in self.known_call_ids)):
