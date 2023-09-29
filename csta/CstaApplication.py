@@ -230,7 +230,7 @@ class CstaApplication:
 
                        Example: C.send_csta("MakeCall")
         """
-        if isinstance(to_user, CstaUser):
+        if hasattr(to_user, "number"):
             to_user = to_user.number
         user = self.users[from_user]
         user.set_parameter("callingDevice", from_user)
