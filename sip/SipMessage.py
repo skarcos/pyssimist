@@ -222,6 +222,31 @@ class SipMessage(object):
         cseq, method = self.header["CSeq"].split()
         self["CSeq"] = " ".join([str(int(cseq) + 1), method])
 
+    def get_all(self, header):
+        """
+        Retrieve a list of header values for the requested header. Most time times this will be a list with only one
+        element. It will have multiple elements only when the SipMessage contains multiple occurrences of same header.
+
+        :param header: The requested header
+        :return: A list of all the values of all occurrences for the requested header
+        """
+        # Implementation Note: When multiple SIP Headers of the same type are parsed they are
+        # saved internally in the headers dictionary with a #{count} suffix. See also SipParser.parseBytes
+        return [self[h] for h in self.headers if h.startswith(header)]
+
+    def header_contains(self, header, check_string):
+        """
+        Check if any occurrence of the given header contains the given string
+
+        :param header: The header whose values to search
+        :param check_string: The string for which to search
+        :return: True or False
+        """
+        for header_value in self.get_all(header):
+            if check_string in header_value:
+                return True
+        return False
+
     def addAuthorization(self, indata, user, pwd):
         """indata is the WWW-Authenticate header we received"""
         self.increase_cseq()
