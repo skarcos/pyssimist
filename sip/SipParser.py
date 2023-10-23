@@ -96,6 +96,8 @@ if __name__ == "__main__":
    Content-Length: 0
 '''
     j = buildMessage(i, {})
+    print(j.get_all("Via"))
+    print(j.header_contains("Via", "STANDARD_reboot_with_Authen_Proxy"))
     s.make_response_to(j)
     x = '''SIP/2.0 202 Accepted
 Via: SIP/2.0/TCP esrp.rnspn1.rnsp.california.ng911:5060;branch=z9hG4bKSEC-4d2a050a-4f2a050a-1-H666LTmfe6
