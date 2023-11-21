@@ -595,7 +595,7 @@ class SipEndpoint(object):
             # keep it if we are mentioned in the "To" header
             if inmessage_type == message_type and \
                     inmessage_dialog["Call-ID"] not in self.known_call_ids and \
-                    "sip:{}@{}".format(self.number, self.ip) not in inmessage["To"]:
+                    ("@" in inmessage["To"] and "sip:{}@{}".format(self.number, self.ip) not in inmessage["To"]):
                 # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
                 # print(self.number, "My callid is", dialog["Call-ID"])
                 with self.lock:
