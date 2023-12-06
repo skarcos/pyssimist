@@ -388,6 +388,52 @@ def check_in_trace(*conditions_list, check_trace, input_format="pcapng", tshark_
     return result
 
 
+def pcap2asc(filename, applications=("sip", "http", "rtp"), tshark_path=None, tshark_filter=None, keep_temp_files=False):
+    if not tshark_path and platform.system() == "Windows":
+        tshark_path = r"C:\Program Files\Wireshark"
+    input_format = filename.rsplit(".", maxsplit=1)[1]
+    if input_format == "json":
+        with open(filename, "r") as j_file:
+            j_obj = json.load(j_file)
+    elif input_format.startswith("pcap"):
+        temp_file = open_cap_file(filename, tshark_path, tshark_filter)
+        with open(temp_file, "r") as j_file:
+            j_obj = json.load(j_file)
+        if not keep_temp_files:
+            os.remove(temp_file)
+    else:
+        raise Exception("Invalid input file type: {}. Supported formats are pcapng and json".format(input_format))
+    result = []
+    for j_msg in j_obj:
+        frame_protocols = j_msg["_source"]["layers"]["frame"]["frame.protocols"]
+        if not any([application in frame_protocols for application in applications]):
+            continue
+        ip_layer = frame_protocols.split(":")[2]
+        transport_layer = frame_protocols.split(":")[3]
+        for application in applications:
+            if application in j_msg["_source"]["layers"]:
+                src_addr = "{}:{}".format(j_msg["_source"]["layers"][ip_layer][ip_layer + ".src"],
+                                                 j_msg["_source"]["layers"][transport_layer][transport_layer + ".srcport"])
+                dst_addr = "{}:{}".format(j_msg["_source"]["layers"][ip_layer][ip_layer + ".dst"],
+                                                 j_msg["_source"]["layers"][transport_layer][transport_layer + ".dstport"])
+                if application == "sip":
+                    msg = {"data": {"sender": src_addr, "receiver": dst_addr}}
+                    try:
+                        msg_raw = assemble_message_from_json(j_msg, appl=application)
+                        msg["data"]["sip_msg"] = msg_raw
+                        msg["type"] = "_SIP_"
+                        # msg = check_in_trace(*criteria, check_trace=[msg_obj], input_format="list")
+                        # time_epoch = j_msg["_source"]["layers"]["frame"]["frame.time_epoch"]
+                        # result[application].setdefault("{}:{}".format(ip_layer, transport_layer), []) \
+                        #     .append((time_epoch, src_addr, dst_addr, msg_obj, expand))
+                        result.append(msg)
+                    except:
+                        print("Unable to parse:")
+                        pprint(j_msg)
+
+    return result
+
+
 def summarize_trace(filename, *tests, applications=("sip", "http", "rtp"), input_format="pcapng", tshark_path=None,
                     tshark_filter=None, delete_json=True):
     if not tshark_path and platform.system() == "Windows":
