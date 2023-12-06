@@ -592,10 +592,11 @@ class SipEndpoint(object):
 
             # when sharing buffers we can get a message of other endpoints
             # buffer message of correct type but unknown callid
-            # keep it if we are mentioned in the "To" header
+            # keep it if we are mentioned in the "To" or "Route" headers
             if inmessage_type == message_type and \
                     inmessage_dialog["Call-ID"] not in self.known_call_ids and \
-                    ("@" in inmessage["To"] and "sip:{}@{}".format(self.number, self.ip) not in inmessage["To"]):
+                    ("@" in inmessage["To"] and "sip:{}@{}".format(self.number, self.ip) not in inmessage["To"]) and \
+                    not inmessage.header_contains("Route", self.number):
                 # print(self.number, "Aborting", inmessage_type, "with callid", inmessage_dialog["Call-ID"])
                 # print(self.number, "My callid is", dialog["Call-ID"])
                 with self.lock:
