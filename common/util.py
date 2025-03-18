@@ -204,12 +204,12 @@ class XmlBody:
                  default_namespace="http://www.ecma-international.org/standards/ecma-323/csta/ed4"):
         self.encoding = default_encoding
         if isinstance(xml_content, bytes):
-            xml_encoding = re.search(b"encoding=[\'\"](\S*)[\'\"].* ?\?\>", xml_content)
+            xml_encoding = re.search(br"encoding=[\'\"](\S*)[\'\"].* ?\?\>", xml_content)
             if xml_encoding:
                 self.encoding = xml_encoding.group(1).decode(encoding=default_encoding)
             self.ns_map = self.parse_map(io.StringIO(xml_content.decode(self.encoding)))
         else:
-            xml_encoding = re.search("encoding=[\'\"](\S*)[\'\"].* ?\?\>", xml_content)
+            xml_encoding = re.search(r"encoding=[\'\"](\S*)[\'\"].* ?\?\>", xml_content)
             if xml_encoding:
                 self.encoding = xml_encoding.group(1)
             self.ns_map = self.parse_map(io.StringIO(xml_content))
