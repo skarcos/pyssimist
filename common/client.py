@@ -13,16 +13,19 @@ from common.util import wait_for_sip_data, NoData, IncompleteData
 
 
 class TCPClient(object):
-    def __init__(self, ip, port):
+    def __init__(self, ip, port, existing_socket=None):
         self.sip_buffer = []
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
-        if ":" in self.ip:
-            # ipv6 case
-            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        if existing_socket:
+            self.socket = existing_socket
         else:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if ":" in self.ip:
+                # ipv6 case
+                self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+            else:
+                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.send_lock = Lock()
         self.wait_lock = Lock()
         self.csta_wait_lock = Lock()
@@ -163,25 +166,30 @@ class TCPClient(object):
 
 
 class UDPClient(TCPClient):
-    def __init__(self, ip, port):
+    def __init__(self, ip, port, existing_socket=None):
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
-        if ":" in self.ip:
-            # ipv6 case
-            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        if existing_socket:
+            self.socket = existing_socket
         else:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.bind((self.ip, self.port))
-        self.socket.settimeout(5.0)
-        self.sockfile = self.socket.makefile(mode='rb')
+            if ":" in self.ip:
+                # ipv6 case
+                self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+            else:
+                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # TODO: Are the next 3 lines correct? Is the point that in UDP we don't connect?
+            #  So connect from TCPClient will not be called to do these actions? Is this the way to handle that?
+            self.socket.bind((self.ip, self.port))
+            self.socket.settimeout(5.0)
+            self.sockfile = self.socket.makefile(mode='rb')
         self.send_lock = Lock()
         self.wait_lock = Lock()
         self.csta_wait_lock = Lock()
 
 
 class TLSClient(TCPClient):
-    def __init__(self, ip, port, certificate=None, subject_name="localhost"):
+    def __init__(self, ip, port, existing_socket=None, certificate=None, subject_name="localhost"):
         self.ip = ip
         self.port = port
         self.rip, self.rport = None, None
@@ -189,6 +197,7 @@ class TLSClient(TCPClient):
         self.send_lock = Lock()
         self.wait_lock = Lock()
         self.csta_wait_lock = Lock()
+        self.existing_socket = existing_socket
 
         # PROTOCOL_TLS_CLIENT requires valid cert chain and hostname
         if hasattr(ssl, "PROTOCOL_TLS_CLIENT"):
@@ -207,15 +216,18 @@ class TLSClient(TCPClient):
             self.context.load_verify_locations(certificate)
 
     def connect(self, dest_ip, dest_port):
-        if ":" in self.ip:
-            # ipv6 case
-            tcp_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+        if self.existing_socket:
+            self.socket = self.existing_socket
         else:
-            tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket = self.context.wrap_socket(tcp_socket, server_hostname=self.server_name)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-#        self.socket.bind((self.ip, self.port))
-        #self.port = self.socket.getsockname()[1]
-        self.socket.settimeout(5.0)
-        self.sockfile = self.socket.makefile(mode='rb')
-        super().connect(dest_ip, dest_port)
+            if ":" in self.ip:
+                # ipv6 case
+                tcp_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM, 0)
+            else:
+                tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket = self.context.wrap_socket(tcp_socket, server_hostname=self.server_name)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    #        self.socket.bind((self.ip, self.port))
+            #self.port = self.socket.getsockname()[1]
+            self.socket.settimeout(5.0)
+            self.sockfile = self.socket.makefile(mode='rb')
+            super().connect(dest_ip, dest_port)
