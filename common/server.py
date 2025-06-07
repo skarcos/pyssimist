@@ -105,9 +105,10 @@ class SipServer:
 
     def send_new(self, address, *args, **kwargs):
         with self.lock:
-            link = my_clients.TCPClient(ip=self.ip, port=0)
-            rip, rport = address.split(":")
-            link.connect(rip, int(rport))
+            # Try to find an existing link for this address
+            link = self.get_address_link(address)
+            if not link:
+                raise Exception("No existing connection found towards endpoint " + str(address))
             self.sip_endpoint.use_link(link)
             return self.sip_endpoint.send_new(*args, **kwargs)
 
@@ -130,19 +131,15 @@ class SipServer:
         local_ip, local_port = sock.getsockname()
         client = None
         if self.protocol in ("tcp", "TCP"):
-            client = my_clients.TCPClient(local_ip, local_port)
+            client = my_clients.TCPClient(local_ip, local_port, existing_socket=sock)
         elif self.protocol in ("udp", "UDP"):
-            client = my_clients.UDPClient(local_ip, local_port)
+            client = my_clients.UDPClient(local_ip, local_port, existing_socket=sock)
         elif self.protocol in ("tls", "TLS"):
-            client = my_clients.TLSClient(local_ip, local_port, None)
+            client = my_clients.TLSClient(local_ip, local_port, existing_socket=sock, certificate=None)
         client.rip = addr[0]
         client.rport = addr[1]
         self.sip_endpoint.use_link(client)
-        self.sip_endpoint.link.socket = sock
-        #        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sip_endpoint.link.sockfile = sock.makefile(mode='rb')
         self.links.append((None, client))
-        # self.links.append(("{}:{}".format(*addr), client))
         return client
 
     def serve_forever(self):
@@ -194,7 +191,8 @@ class SipServer:
     def shutdown(self):
         print("Shutting down server. It may take up to 5 seconds")
         self.continue_serving = False
-        self.server_thread.join()
+        if hasattr(self, "server_thread") and threading.current_thread() != self.server_thread:
+            self.server_thread.join()
 
     def serve_in_background(self):
         self.server_thread = threading.Thread(target=self.serve_forever)
@@ -275,7 +273,7 @@ class SipServer:
                     self.events[inmessage.get_status_or_method()].set()
                     self.buffers[inmessage.get_status_or_method()].append(inmessage)
                 else:
-                    self.sip_endpoint.message_buffer.append(inmessage)
+                    self.sip_endpoint.message_buffer.add(inmessage)
             except UnicodeDecodeError:
                 debug("Ignoring malformed data")
         # if mask & selectors.EVENT_WRITE:

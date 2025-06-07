@@ -99,7 +99,7 @@ def b2b_uas_terminate(sip_server, bye):
 
 
 if __name__ == "__main__":
-    logger.setLevel("INFO")
+    logger.setLevel("DEBUG")
     HOST, PORT = "localhost", 9999
     MockSIPTCP = SipServer(HOST, PORT)
     MockSIPTCP.serve_in_background()
@@ -110,11 +110,11 @@ if __name__ == "__main__":
     SipMock.on("INVITE", b2b_uas_establish)
     SipMock.on("BYE", b2b_uas_terminate)
 
-    A.connect(("localhost", 6666),
+    A.connect(("127.0.0.1", 6666),
               (HOST, PORT),
               "tcp")
     # B.use_link(A.link)
-    B.connect(("localhost", 6667),
+    B.connect(("127.0.0.1", 6667),
               (HOST, PORT),
               "tcp")
 
