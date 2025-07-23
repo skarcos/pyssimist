@@ -187,6 +187,21 @@ class UDPClient(TCPClient):
         self.wait_lock = Lock()
         self.csta_wait_lock = Lock()
 
+    def send(self, data, encoding="utf8"):
+        # self.socket.sendall(binascii.hexlify(bytes(data,"utf8")))
+        with self.send_lock:
+            if type(data) == type(b''):
+                self.socket.sendto(data, (self.rip, self.rport))
+                debug("Sent from port {}:\n\n".format(self.port) + data.decode("utf8", "backslashreplace").replace("\r\n",
+                                                                                                                   "\n"))
+            else:
+                self.socket.sendto(bytes(data, encoding), (self.rip, self.rport))
+                debug("Sent from port {}:\n\n".format(self.port) + data.replace("\r\n", "\n"))
+
+    def connect(self, dest_ip, dest_port):
+        self.rip = dest_ip
+        self.rport = dest_port
+
 
 class TLSClient(TCPClient):
     def __init__(self, ip, port, existing_socket=None, certificate=None, subject_name="localhost"):
